@@ -1,0 +1,14 @@
+services:
+  remnaguard:
+    build: .
+    image: remnaguard:local
+    ports:
+      - "8080:8080"
+    environment:
+      REMNAWAVE_ROOT_BEARER: "${REMNAWAVE_ROOT_BEARER:?set REMNAWAVE_ROOT_BEARER}"
+      REMNAGUARD_TOKEN_PEPPER: "${REMNAGUARD_TOKEN_PEPPER:?set REMNAGUARD_TOKEN_PEPPER}"
+      REMNAGUARD_AUDIT_PEPPER: "${REMNAGUARD_AUDIT_PEPPER:-audit-pepper-change-me}"
+    volumes:
+      - ./configs/remnaguard.example.yaml:/etc/remnaguard/remnaguard.yaml:ro
+      - ./configs:/etc/remnaguard/tokens.d:ro
+    restart: unless-stopped

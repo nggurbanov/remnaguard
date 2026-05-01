@@ -1,0 +1,78 @@
+server:
+  api_listen: ":8080"
+  local_listen: "127.0.0.1:8081"
+  max_header_bytes: 1048576
+
+upstream:
+  base_url: "https://remnawave.example.com"
+  bearer_env: "REMNAWAVE_ROOT_BEARER"
+  version_path: "/api/system/metadata"
+  custom_ca_file: ""
+  mtls_cert_file: ""
+  mtls_key_file: ""
+  extra_headers: {}
+
+compatibility:
+  remnawave_version: "2.7.4"
+  assume_version: ""
+  allow_version_mismatch: false
+
+limits:
+  max_path_length: 2048
+  max_query_length: 4096
+  max_body_bytes: 1048576
+  upstream_body_bytes: 67108864
+  global_concurrency: 128
+  per_token_concurrency: 8
+  default_rate: "600/m"
+
+metrics:
+  enabled: false
+
+audit:
+  stdout: true
+  pepper_env: "REMNAGUARD_AUDIT_PEPPER"
+  sqlite_path: ""
+
+report:
+  enabled: false
+  unsafe_report_proxy: false
+
+public_subscriptions:
+  enabled: false
+  short_uuid_regex: "^[A-Za-z0-9_-]{6,64}$"
+  per_ip_concurrency: 8
+  per_ip_rate: "120/m"
+  allowed_client_types:
+    - sing-box
+    - clash
+    - v2ray
+    - hiddify
+  request_header_allowlist:
+    - user-agent
+    - accept
+    - x-hwid
+    - x-device-os
+    - x-ver-os
+    - x-device-model
+    - x-app-version
+  response_header_allowlist:
+    - content-type
+    - content-disposition
+    - subscription-userinfo
+    - profile-update-interval
+    - profile-web-page-url
+    - support-url
+    - x-provider-id
+
+reload:
+  sighup: true
+  watch_files: false
+  allow_insecure_secret_file_permissions: false
+
+write_safety:
+  single_writer: false
+  enable_restricted_writes: false
+
+include:
+  - "tokens.d/*.yaml"

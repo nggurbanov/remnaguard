@@ -1,0 +1,12 @@
+.git
+.github
+.local
+.env
+.env.*
+tokens.d
+remnaguard.yaml
+dist
+/remnaguard
+coverage.out
+*.sqlite
+*.db

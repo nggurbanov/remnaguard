@@ -1,0 +1,13 @@
+.DS_Store
+/remnaguard
+dist/
+coverage.out
+*.sqlite
+*.db
+tokens.d/
+remnaguard.yaml
+.env
+.env.*
+.local/
+PLAN.md
+REFACTORING_PLAN.md

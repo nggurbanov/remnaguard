@@ -1,0 +1,56 @@
+version: 2
+
+project_name: remnaguard
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: remnaguard
+    main: ./cmd/remnaguard
+    binary: remnaguard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+
+archives:
+  - formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+dockers:
+  - image_templates:
+      - ghcr.io/nggurbanov/remnaguard:{{ .Tag }}-amd64
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - --platform=linux/amd64
+  - image_templates:
+      - ghcr.io/nggurbanov/remnaguard:{{ .Tag }}-arm64
+    dockerfile: Dockerfile
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - --platform=linux/arm64
+
+docker_manifests:
+  - name_template: ghcr.io/nggurbanov/remnaguard:{{ .Tag }}
+    image_templates:
+      - ghcr.io/nggurbanov/remnaguard:{{ .Tag }}-amd64
+      - ghcr.io/nggurbanov/remnaguard:{{ .Tag }}-arm64

@@ -1,0 +1,42 @@
+tokens:
+  - id: internal-backend
+    scopes:
+      - remnawave:*
+    credentials:
+      - id: internal-backend-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
+
+  - id: analytics-readonly
+    scopes:
+      - users:read
+      - system:read
+      - metadata:read
+    credentials:
+      - id: analytics-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
+
+  - id: bot-users-only
+    scopes:
+      - users:read
+      - users:create
+      - users:update
+      - subscriptions:read
+    constraints:
+      username_prefix: "bot_"
+      max_traffic_limit_bytes: 1099511627776
+      forbid_unlimited_traffic: true
+      max_description_length: 256
+    credentials:
+      - id: bot-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
+
+  - id: mcp-agent-support
+    scopes:
+      - users:read
+      - metadata:read
+    constraints:
+      username_prefix: "support_"
+      max_description_length: 256
+    credentials:
+      - id: support-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"

@@ -1,0 +1,472 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/remnawave-settings": {
+      "get": {},
+      "patch": {}
+    },
+    "/api/passkeys/registration/options": {
+      "get": {}
+    },
+    "/api/passkeys/registration/verify": {
+      "post": {}
+    },
+    "/api/passkeys": {
+      "get": {},
+      "delete": {},
+      "patch": {}
+    },
+    "/api/auth/login": {
+      "post": {}
+    },
+    "/api/auth/register": {
+      "post": {}
+    },
+    "/api/auth/status": {
+      "get": {}
+    },
+    "/api/auth/oauth2/authorize": {
+      "post": {}
+    },
+    "/api/auth/oauth2/callback": {
+      "post": {}
+    },
+    "/api/auth/passkey/authentication/options": {
+      "get": {}
+    },
+    "/api/auth/passkey/authentication/verify": {
+      "post": {}
+    },
+    "/api/subscription-page-configs": {
+      "get": {},
+      "patch": {},
+      "post": {}
+    },
+    "/api/subscription-page-configs/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/subscription-page-configs/actions/reorder": {
+      "post": {}
+    },
+    "/api/subscription-page-configs/actions/clone": {
+      "post": {}
+    },
+    "/api/users": {
+      "post": {},
+      "patch": {},
+      "get": {}
+    },
+    "/api/users/{uuid}": {
+      "delete": {},
+      "get": {}
+    },
+    "/api/users/tags": {
+      "get": {}
+    },
+    "/api/users/{uuid}/accessible-nodes": {
+      "get": {}
+    },
+    "/api/users/{uuid}/subscription-request-history": {
+      "get": {}
+    },
+    "/api/users/by-short-uuid/{shortUuid}": {
+      "get": {}
+    },
+    "/api/users/by-username/{username}": {
+      "get": {}
+    },
+    "/api/users/by-id/{id}": {
+      "get": {}
+    },
+    "/api/users/by-telegram-id/{telegramId}": {
+      "get": {}
+    },
+    "/api/users/by-email/{email}": {
+      "get": {}
+    },
+    "/api/users/by-tag/{tag}": {
+      "get": {}
+    },
+    "/api/users/{uuid}/actions/revoke": {
+      "post": {}
+    },
+    "/api/users/{uuid}/actions/disable": {
+      "post": {}
+    },
+    "/api/users/{uuid}/actions/enable": {
+      "post": {}
+    },
+    "/api/users/{uuid}/actions/reset-traffic": {
+      "post": {}
+    },
+    "/api/users/resolve": {
+      "post": {}
+    },
+    "/api/users/bulk/delete-by-status": {
+      "post": {}
+    },
+    "/api/users/bulk/delete": {
+      "post": {}
+    },
+    "/api/users/bulk/revoke-subscription": {
+      "post": {}
+    },
+    "/api/users/bulk/reset-traffic": {
+      "post": {}
+    },
+    "/api/users/bulk/update": {
+      "post": {}
+    },
+    "/api/users/bulk/update-squads": {
+      "post": {}
+    },
+    "/api/users/bulk/extend-expiration-date": {
+      "post": {}
+    },
+    "/api/users/bulk/all/update": {
+      "post": {}
+    },
+    "/api/users/bulk/all/reset-traffic": {
+      "post": {}
+    },
+    "/api/users/bulk/all/extend-expiration-date": {
+      "post": {}
+    },
+    "/api/sub/{shortUuid}/info": {
+      "get": {}
+    },
+    "/api/sub/{shortUuid}": {
+      "get": {}
+    },
+    "/api/sub/{shortUuid}/{clientType}": {
+      "get": {}
+    },
+    "/api/subscriptions": {
+      "get": {}
+    },
+    "/api/subscriptions/by-username/{username}": {
+      "get": {}
+    },
+    "/api/subscriptions/by-short-uuid/{shortUuid}": {
+      "get": {}
+    },
+    "/api/subscriptions/by-uuid/{uuid}": {
+      "get": {}
+    },
+    "/api/subscriptions/by-short-uuid/{shortUuid}/raw": {
+      "get": {}
+    },
+    "/api/subscriptions/subpage-config/{shortUuid}": {
+      "get": {}
+    },
+    "/api/subscriptions/connection-keys/{uuid}": {
+      "get": {}
+    },
+    "/api/subscription-templates": {
+      "get": {},
+      "patch": {},
+      "post": {}
+    },
+    "/api/subscription-templates/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/subscription-templates/actions/reorder": {
+      "post": {}
+    },
+    "/api/tokens": {
+      "post": {},
+      "get": {}
+    },
+    "/api/tokens/{uuid}": {
+      "delete": {}
+    },
+    "/api/config-profiles": {
+      "get": {},
+      "post": {},
+      "patch": {}
+    },
+    "/api/config-profiles/inbounds": {
+      "get": {}
+    },
+    "/api/config-profiles/{uuid}/inbounds": {
+      "get": {}
+    },
+    "/api/config-profiles/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/config-profiles/{uuid}/computed-config": {
+      "get": {}
+    },
+    "/api/config-profiles/actions/reorder": {
+      "post": {}
+    },
+    "/api/snippets": {
+      "get": {},
+      "delete": {},
+      "post": {},
+      "patch": {}
+    },
+    "/api/internal-squads": {
+      "get": {},
+      "post": {},
+      "patch": {}
+    },
+    "/api/internal-squads/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/internal-squads/{uuid}/accessible-nodes": {
+      "get": {}
+    },
+    "/api/internal-squads/{uuid}/bulk-actions/add-users": {
+      "post": {}
+    },
+    "/api/internal-squads/{uuid}/bulk-actions/remove-users": {
+      "delete": {}
+    },
+    "/api/internal-squads/actions/reorder": {
+      "post": {}
+    },
+    "/api/external-squads": {
+      "get": {},
+      "post": {},
+      "patch": {}
+    },
+    "/api/external-squads/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/external-squads/{uuid}/bulk-actions/add-users": {
+      "post": {}
+    },
+    "/api/external-squads/{uuid}/bulk-actions/remove-users": {
+      "delete": {}
+    },
+    "/api/external-squads/actions/reorder": {
+      "post": {}
+    },
+    "/api/keygen": {
+      "get": {}
+    },
+    "/api/nodes/tags": {
+      "get": {}
+    },
+    "/api/nodes": {
+      "post": {},
+      "get": {},
+      "patch": {}
+    },
+    "/api/nodes/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/nodes/{uuid}/actions/enable": {
+      "post": {}
+    },
+    "/api/nodes/{uuid}/actions/disable": {
+      "post": {}
+    },
+    "/api/nodes/{uuid}/actions/restart": {
+      "post": {}
+    },
+    "/api/nodes/{uuid}/actions/reset-traffic": {
+      "post": {}
+    },
+    "/api/nodes/actions/restart-all": {
+      "post": {}
+    },
+    "/api/nodes/actions/reorder": {
+      "post": {}
+    },
+    "/api/nodes/bulk-actions/profile-modification": {
+      "post": {}
+    },
+    "/api/nodes/bulk-actions": {
+      "post": {}
+    },
+    "/api/nodes/bulk-actions/update": {
+      "post": {}
+    },
+    "/api/node-plugins/torrent-blocker": {
+      "get": {}
+    },
+    "/api/node-plugins/torrent-blocker/stats": {
+      "get": {}
+    },
+    "/api/node-plugins/torrent-blocker/truncate": {
+      "delete": {}
+    },
+    "/api/node-plugins": {
+      "get": {},
+      "patch": {},
+      "post": {}
+    },
+    "/api/node-plugins/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/node-plugins/actions/reorder": {
+      "post": {}
+    },
+    "/api/node-plugins/actions/clone": {
+      "post": {}
+    },
+    "/api/node-plugins/executor": {
+      "post": {}
+    },
+    "/api/hosts/tags": {
+      "get": {}
+    },
+    "/api/hosts": {
+      "post": {},
+      "patch": {},
+      "get": {}
+    },
+    "/api/hosts/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/hosts/actions/reorder": {
+      "post": {}
+    },
+    "/api/hosts/bulk/delete": {
+      "post": {}
+    },
+    "/api/hosts/bulk/disable": {
+      "post": {}
+    },
+    "/api/hosts/bulk/enable": {
+      "post": {}
+    },
+    "/api/hosts/bulk/set-inbound": {
+      "post": {}
+    },
+    "/api/hosts/bulk/set-port": {
+      "post": {}
+    },
+    "/api/bandwidth-stats/nodes/{uuid}/users/legacy": {
+      "get": {}
+    },
+    "/api/bandwidth-stats/nodes/{uuid}/users": {
+      "get": {}
+    },
+    "/api/bandwidth-stats/users/{uuid}/legacy": {
+      "get": {}
+    },
+    "/api/bandwidth-stats/users/{uuid}": {
+      "get": {}
+    },
+    "/api/hwid/devices": {
+      "get": {},
+      "post": {}
+    },
+    "/api/hwid/devices/delete": {
+      "post": {}
+    },
+    "/api/hwid/devices/delete-all": {
+      "post": {}
+    },
+    "/api/hwid/devices/stats": {
+      "get": {}
+    },
+    "/api/hwid/devices/top-users": {
+      "get": {}
+    },
+    "/api/hwid/devices/{userUuid}": {
+      "get": {}
+    },
+    "/api/bandwidth-stats/nodes": {
+      "get": {}
+    },
+    "/api/infra-billing/providers": {
+      "get": {},
+      "post": {},
+      "patch": {}
+    },
+    "/api/infra-billing/providers/{uuid}": {
+      "get": {},
+      "delete": {}
+    },
+    "/api/infra-billing/history": {
+      "post": {},
+      "get": {}
+    },
+    "/api/infra-billing/history/{uuid}": {
+      "delete": {}
+    },
+    "/api/infra-billing/nodes": {
+      "get": {},
+      "patch": {},
+      "post": {}
+    },
+    "/api/infra-billing/nodes/{uuid}": {
+      "delete": {}
+    },
+    "/api/subscription-request-history": {
+      "get": {}
+    },
+    "/api/subscription-request-history/stats": {
+      "get": {}
+    },
+    "/api/system/metadata": {
+      "get": {}
+    },
+    "/api/system/stats": {
+      "get": {}
+    },
+    "/api/system/stats/bandwidth": {
+      "get": {}
+    },
+    "/api/system/stats/nodes": {
+      "get": {}
+    },
+    "/api/system/health": {
+      "get": {}
+    },
+    "/api/system/nodes/metrics": {
+      "get": {}
+    },
+    "/api/system/tools/x25519/generate": {
+      "get": {}
+    },
+    "/api/system/tools/happ/encrypt": {
+      "post": {}
+    },
+    "/api/system/testers/srr-matcher": {
+      "post": {}
+    },
+    "/api/system/stats/recap": {
+      "get": {}
+    },
+    "/api/subscription-settings": {
+      "get": {},
+      "patch": {}
+    },
+    "/api/ip-control/fetch-ips/{uuid}": {
+      "post": {}
+    },
+    "/api/ip-control/fetch-ips/result/{jobId}": {
+      "get": {}
+    },
+    "/api/ip-control/drop-connections": {
+      "post": {}
+    },
+    "/api/ip-control/fetch-users-ips/{nodeUuid}": {
+      "post": {}
+    },
+    "/api/ip-control/fetch-users-ips/result/{jobId}": {
+      "get": {}
+    },
+    "/api/metadata/user/{uuid}": {
+      "get": {},
+      "put": {}
+    },
+    "/api/metadata/node/{uuid}": {
+      "get": {},
+      "put": {}
+    }
+  }
+}
