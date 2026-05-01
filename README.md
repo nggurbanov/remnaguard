@@ -1,5 +1,115 @@
 # RemnaGuard
 
+> **Публичная альфа / без гарантий безопасности.** Проект был полностью vibecoded. В нем есть тесты, contract checks и несколько проходов review, но независимого профессионального security audit не было. Не считайте проект гарантированно безопасным для production или high-risk окружений. Использование на ваш риск.
+
+RemnaGuard - это guarded drop-in replacement для privileged доступа к Remnawave API и fine-grained policy gateway для restricted API tokens. Проект не связан с Remnawave, не одобрен и не спонсируется авторами Remnawave.
+
+RemnaGuard ставится между клиентами и Remnawave API. Privileged-интеграции продолжают использовать documented `/api/...` вызовы, но меняют upstream root token на `rg_<credential_id>.<secret>` token со scope `remnawave:*`. Restricted-интеграции получают узкие scopes и route-specific policy enforcement.
+
+## Статус
+
+Репозиторий содержит v1 service baseline:
+
+- fail-closed полный static route catalog для Remnawave `2.7.4`;
+- raw request-target validation до route matching;
+- HMAC-SHA256 credential verification через `REMNAGUARD_TOKEN_PEPPER`;
+- команды token add, rotate, disable и prune с atomic YAML writes, backups и validation rollback;
+- support levels: `privileged`, `policy-enforced`, `unsupported`, `public-subscription`;
+- explicit query allowlists, JSON content enforcement, duplicate-key rejection, body field allowlists и configured value limits;
+- response-side user ownership checks и HWID user preflight checks;
+- restricted write/action support только за `write_safety.enable_restricted_writes` плюс `single_writer`, с per-resource in-memory locks и post-write verification;
+- isolated public subscription forwarding, выключен по умолчанию, с request/response header allowlists и per-IP limits;
+- upstream auth replacement и stripping для hop-by-hop, forwarded и protected headers;
+- no redirect following, disabled automatic decompression, HTTPS-by-default upstreams, custom CA и optional mTLS;
+- local `/healthz`, `/readyz`, `/version`, `/metrics` listener;
+- optional pure-Go SQLite audit sink;
+- SIGHUP config reload с полной validation до swap;
+- JSON audit events без request/response bodies.
+
+Write/action routes по умолчанию privileged. Restricted write/action scopes доступны только когда одновременно включены:
+
+```yaml
+write_safety:
+  enable_restricted_writes: true
+  single_writer: true
+```
+
+Включать это стоит только после local destructive contracts для целевой версии Remnawave.
+
+## Быстрый старт
+
+```sh
+cp configs/remnaguard.example.yaml remnaguard.yaml
+export REMNAWAVE_ROOT_BEARER=...
+export REMNAGUARD_TOKEN_PEPPER=change-me-long-random
+remnaguard token generate --id restricted-cred --pepper "$REMNAGUARD_TOKEN_PEPPER"
+remnaguard validate -c remnaguard.yaml
+remnaguard serve -c remnaguard.yaml
+```
+
+Token policies удобно хранить в `tokens.d/*.yaml`. Raw token печатается один раз командой `token generate`; в config храните только HMAC digest.
+
+## Совместимость
+
+RemnaGuard заявляет совместимость только для explicit static catalogs. Первый catalog - Remnawave `2.7.4`.
+
+По умолчанию readiness пытается определить upstream version. Если detection не удался или версия не поддерживается, proxied routes fail closed. Для изолированных окружений можно задать:
+
+```yaml
+compatibility:
+  remnawave_version: "2.7.4"
+  assume_version: "2.7.4"
+  allow_version_mismatch: false
+```
+
+`allow_version_mismatch` нельзя использовать, чтобы считать writes/actions policy-enforced для restricted tokens.
+
+## Security Defaults
+
+- Unknown, ambiguous, malformed и unsupported requests denied.
+- Privileged access - не blind proxy: version guard, catalog matching, request structural checks, header stripping, auth isolation, rate limits и audit все равно применяются.
+- Public subscriptions выключены по умолчанию.
+- Upstream HTTPS обязателен, кроме explicit localhost/private insecure use.
+- Incoming `Authorization`, forwarded, protected auth и hop-by-hop headers strip'ятся перед upstream proxying.
+- Headers, перечисленные в `Connection`, тоже strip'ятся.
+- Request и response bodies не логируются.
+- Metrics используют только bounded labels.
+- Inbound HTTP/2 denied raw request validator'ом в v1.
+
+Subscription URLs - bearer-like secrets. Не публикуйте и не логируйте их.
+
+## CLI
+
+Реализовано:
+
+```text
+remnaguard serve -c remnaguard.yaml
+remnaguard validate -c remnaguard.yaml
+remnaguard routes list
+remnaguard routes check-openapi --spec remnawave-openapi.json [--strict]
+remnaguard token generate [--id credential-id] [--pepper pepper]
+remnaguard token add -c remnaguard.yaml --id token-id --scopes users:read,hwid:read
+remnaguard token rotate -c remnaguard.yaml --id token-id
+remnaguard token disable -c remnaguard.yaml --id token-id --credential credential-id
+remnaguard token prune -c remnaguard.yaml --id token-id
+remnaguard policy explain -c remnaguard.yaml --token token-id
+remnaguard policy test -c remnaguard.yaml --token token-id --method GET --path /api/users/{uuid}
+```
+
+File-editing token commands предпочитают `tokens.d/<token-id>.yaml`, пишут files с `0600`, создают directories с `0700`, делают timestamped backups и восстанавливают backup, если merged config validation падает.
+
+## License
+
+Apache-2.0. См. [LICENSE](LICENSE), [NOTICE](NOTICE), [LEGAL.md](LEGAL.md).
+
+## Release Posture
+
+Release automation описан в `.goreleaser.yml`. Published container descriptions должны повторять non-affiliation disclaimer и не должны использовать Remnawave logos или visual identity.
+
+---
+
+# English
+
 > **Public alpha / no security warranty.** This project was fully vibecoded. It has tests, contract checks, and review passes, but it has not had an independent professional security audit. Do not treat it as guaranteed safe for production or high-risk environments. You run it at your own risk.
 
 RemnaGuard is a guarded drop-in replacement for privileged Remnawave API access and a fine-grained policy gateway for restricted API tokens. It is not affiliated with, endorsed by, or sponsored by the Remnawave project or its owners.
@@ -26,7 +136,15 @@ This repository contains the v1 service baseline:
 - SIGHUP config reload with full validation before swap;
 - JSON audit events without request or response bodies.
 
-Write/action routes are privileged by default. Restricted write/action scopes are available only when `write_safety.enable_restricted_writes: true` and `write_safety.single_writer: true` are both configured and should be enabled only after local destructive contracts pass for the target Remnawave version.
+Write/action routes are privileged by default. Restricted write/action scopes are available only when both flags are enabled:
+
+```yaml
+write_safety:
+  enable_restricted_writes: true
+  single_writer: true
+```
+
+Enable this only after local destructive contracts pass for the target Remnawave version.
 
 ## Quick Start
 
@@ -63,6 +181,7 @@ compatibility:
 - Public subscriptions are disabled by default.
 - Upstream HTTPS is required unless localhost/private insecure use is explicit.
 - Incoming `Authorization`, forwarded, protected auth, and hop-by-hop headers are stripped before upstream proxying.
+- Headers listed in `Connection` are stripped too.
 - Request and response bodies are not logged.
 - Metrics use bounded labels only.
 - Inbound HTTP/2 is denied by the raw request validator in v1.
