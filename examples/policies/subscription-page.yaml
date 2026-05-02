@@ -1,0 +1,16 @@
+# Intended client: remnawave/subscription-page backend for one public subscription page.
+# Expected allowed routes: metadata, subscription rendering, and the selected page config.
+# Expected denied routes: users, squads, nodes, hosts, settings, writes, token/admin routes.
+# Tradeoff: /api/sub/{shortUuid} renders any known subscription short UUID; keep this token server-side.
+tokens:
+  - id: subscription-page
+    scopes:
+      - metadata:read
+      - subscriptions:read
+      - subscription-pages:read
+    constraints:
+      allowed_subscription_page_configs:
+        - "00000000-0000-0000-0000-000000000201"
+    credentials:
+      - id: subscription-page-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
