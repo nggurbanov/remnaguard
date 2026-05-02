@@ -431,7 +431,7 @@ func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"uuid":"u","username":"tenant-a","activeInternalSquads":[{"uuid":"internal-a"}],"externalSquadUuid":"external-a"}}`))
+		_, _ = w.Write([]byte(`{"response":{"uuid":"u","username":"tenant-a","activeInternalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111"}],"externalSquadUuid":"external-a"}}`))
 	}))
 	defer upstream.Close()
 
@@ -441,14 +441,14 @@ func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) 
 	cfg.Tokens[0].Scopes = []string{"users:create"}
 	cfg.Tokens[0].Constraints = config.Constraints{
 		UsernamePrefix:        "tenant-",
-		AllowedInternalSquads: []string{"internal-a"},
+		AllowedInternalSquads: []string{"11111111-1111-4111-8111-111111111111"},
 		AllowedExternalSquads: []string{"external-a"},
 	}
 	rt, err := NewRuntime(cfg, "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"username":"tenant-a","activeInternalSquads":["internal-a"],"externalSquadUuid":"external-a"}`
+	body := `{"username":"tenant-a","activeInternalSquads":["11111111-1111-4111-8111-111111111111"],"externalSquadUuid":"external-a"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(body))
 	req.RequestURI = "/api/users"
 	req.Header.Set("Authorization", "Bearer rg_cred.secret")
@@ -462,7 +462,7 @@ func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) 
 		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"tenant-b","activeInternalSquads":["internal-b"]}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"tenant-b","activeInternalSquads":["22222222-2222-4222-8222-222222222222"]}`))
 	req.RequestURI = "/api/users"
 	req.Header.Set("Authorization", "Bearer rg_cred.secret")
 	req.Header.Set("Content-Type", "application/json")
@@ -558,12 +558,12 @@ func TestSquadListResponseIsFiltered(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":[{"uuid":"internal-a","name":"A"},{"uuid":"internal-b","name":"B"}],"count":2}`))
+		_, _ = w.Write([]byte(`{"response":{"total":2,"internalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","rawInbound":{"privateKey":"secret"}},{"uuid":"22222222-2222-4222-8222-222222222222","name":"B","rawInbound":{"privateKey":"secret"}}]}}`))
 	}))
 	defer upstream.Close()
 	cfg := testConfig(upstream.URL, "secret")
 	cfg.Tokens[0].Scopes = append(cfg.Tokens[0].Scopes, "squads:read")
-	cfg.Tokens[0].Constraints.AllowedInternalSquads = []string{"internal-a"}
+	cfg.Tokens[0].Constraints.AllowedInternalSquads = []string{"11111111-1111-4111-8111-111111111111"}
 	rt, err := NewRuntime(cfg, "test", "")
 	if err != nil {
 		t.Fatal(err)
@@ -576,8 +576,44 @@ func TestSquadListResponseIsFiltered(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "internal-a") || strings.Contains(rec.Body.String(), "internal-b") {
+	if !strings.Contains(rec.Body.String(), "11111111-1111-4111-8111-111111111111") || strings.Contains(rec.Body.String(), "22222222-2222-4222-8222-222222222222") {
 		t.Fatalf("unexpected filtered body: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "rawInbound") || strings.Contains(rec.Body.String(), "privateKey") {
+		t.Fatalf("sensitive squad fields were not redacted: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"total":1`) {
+		t.Fatalf("expected redacted total, got %s", rec.Body.String())
+	}
+}
+
+func TestSquadDetailResponseIsRedacted(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","viewPosition":1,"inbounds":[{"tag":"node"}],"rawInbound":{"privateKey":"secret"}}}`))
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = append(cfg.Tokens[0].Scopes, "squads:read")
+	cfg.Tokens[0].Constraints.AllowedInternalSquads = []string{"11111111-1111-4111-8111-111111111111"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads/11111111-1111-4111-8111-111111111111", nil)
+	req.RequestURI = "/api/internal-squads/11111111-1111-4111-8111-111111111111"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "11111111-1111-4111-8111-111111111111") || !strings.Contains(rec.Body.String(), `"name":"A"`) {
+		t.Fatalf("unexpected redacted body: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "inbounds") || strings.Contains(rec.Body.String(), "privateKey") {
+		t.Fatalf("sensitive squad detail fields were not redacted: %s", rec.Body.String())
 	}
 }
 

@@ -597,6 +597,8 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 			return err
 		}
 		return remnawave.OwnsUser(tok, user)
+	case "squad.internal.read", "squad.external.read":
+		return redactSquadResponse(res)
 	default:
 		return nil
 	}
@@ -619,19 +621,81 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 	case "squad.internal.list":
 		return filterJSONList(res, func(item any) bool {
 			if len(tok.Constraints.AllowedInternalSquads) == 0 {
+				sanitizeSquadObject(item)
 				return true
 			}
-			return contains(tok.Constraints.AllowedInternalSquads, objectUUID(item))
+			allowed := contains(tok.Constraints.AllowedInternalSquads, objectUUID(item))
+			if allowed {
+				sanitizeSquadObject(item)
+			}
+			return allowed
 		})
 	case "squad.external.list":
 		return filterJSONList(res, func(item any) bool {
 			if len(tok.Constraints.AllowedExternalSquads) == 0 {
+				sanitizeSquadObject(item)
 				return true
 			}
-			return contains(tok.Constraints.AllowedExternalSquads, objectUUID(item))
+			allowed := contains(tok.Constraints.AllowedExternalSquads, objectUUID(item))
+			if allowed {
+				sanitizeSquadObject(item)
+			}
+			return allowed
 		})
 	default:
 		return nil
+	}
+}
+
+func redactSquadResponse(res *proxy.Response) error {
+	var root any
+	dec := json.NewDecoder(bytes.NewReader(res.Body))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return err
+	}
+	if !sanitizeSquadNode(root) {
+		return fmt.Errorf("unfilterable_squad_response")
+	}
+	body, err := json.Marshal(root)
+	if err != nil {
+		return err
+	}
+	res.Body = body
+	res.Header.Del("Content-Length")
+	return nil
+}
+
+func sanitizeSquadNode(node any) bool {
+	switch typed := node.(type) {
+	case map[string]any:
+		if objectUUID(typed) != "" {
+			sanitizeSquadObject(typed)
+			return true
+		}
+		for _, key := range []string{"response", "squad", "internalSquad", "externalSquad"} {
+			child, ok := typed[key]
+			if !ok {
+				continue
+			}
+			if sanitizeSquadNode(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sanitizeSquadObject(item any) {
+	obj, ok := item.(map[string]any)
+	if !ok {
+		return
+	}
+	allowed := map[string]bool{"uuid": true, "name": true, "viewPosition": true}
+	for key := range obj {
+		if !allowed[key] {
+			delete(obj, key)
+		}
 	}
 }
 
@@ -667,7 +731,7 @@ func filterListNode(node any, keep func(any) bool) (any, int, bool) {
 		}
 		return out, len(out), true
 	case map[string]any:
-		for _, key := range []string{"response", "users", "items", "data"} {
+		for _, key := range []string{"response", "users", "internalSquads", "externalSquads", "items", "data"} {
 			child, ok := typed[key]
 			if !ok {
 				continue
