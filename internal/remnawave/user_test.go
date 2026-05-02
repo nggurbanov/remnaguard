@@ -26,6 +26,21 @@ func TestDecodeUserEnvelope(t *testing.T) {
 	}
 }
 
+func TestIsEmptyUserResponse(t *testing.T) {
+	for _, body := range [][]byte{
+		[]byte(`{"response":[]}`),
+		[]byte(`{"response":{"users":[]}}`),
+		[]byte(`[]`),
+	} {
+		if !IsEmptyUserResponse(body) {
+			t.Fatalf("expected empty user response for %s", body)
+		}
+	}
+	if IsEmptyUserResponse([]byte(`{"response":{"uuid":"u","username":"tenant-a"}}`)) {
+		t.Fatal("single user response must not be treated as empty")
+	}
+}
+
 func TestDecodeUserRemnawaveShapes(t *testing.T) {
 	body := []byte(`{"response":{"users":[{"uuid":"u","username":"tenant-a","telegram_id":123,"email":"a@example.com","activeInternalSquads":[{"uuid":"internal-a"}],"externalSquad":{"uuid":"external-a"},"external_squad_uuid":"external-a","short_uuid":"short-a","subscription_page_config_uuid":"page-a"}]}}`)
 	users, err := DecodeUsers(body)

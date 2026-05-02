@@ -40,6 +40,31 @@ func TestSingletonUserReadResponseOwnershipGate(t *testing.T) {
 	}
 }
 
+func TestEmptyUserReadResponsePassesThrough(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":[]}`))
+	}))
+	defer upstream.Close()
+
+	rt, err := NewRuntime(testConfig(upstream.URL, "secret"), "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/users/by-telegram-id/1000000900000000", nil)
+	req.RequestURI = "/api/users/by-telegram-id/1000000900000000"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected empty user response to pass through, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"response":[]`) {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
 func TestPrivilegedRepresentativeRoutesProxy(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	var seen []string

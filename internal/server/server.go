@@ -594,6 +594,9 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 	case "user.read.uuid", "user.read.username", "user.read.telegram":
 		user, err := remnawave.DecodeUser(res.Body)
 		if err != nil {
+			if remnawave.IsEmptyUserResponse(res.Body) {
+				return nil
+			}
 			return err
 		}
 		return remnawave.OwnsUser(tok, user)

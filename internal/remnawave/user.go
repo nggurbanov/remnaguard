@@ -41,6 +41,30 @@ func DecodeUser(body []byte) (User, error) {
 	return users[0], nil
 }
 
+func IsEmptyUserResponse(body []byte) bool {
+	var root any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return false
+	}
+	return isEmptyUserNode(root)
+}
+
+func isEmptyUserNode(v any) bool {
+	switch typed := v.(type) {
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		for _, key := range []string{"response", "user", "users", "items", "data"} {
+			if child, ok := typed[key]; ok {
+				return isEmptyUserNode(child)
+			}
+		}
+	}
+	return false
+}
+
 func DecodeUsers(body []byte) ([]User, error) {
 	var root any
 	dec := json.NewDecoder(bytes.NewReader(body))
