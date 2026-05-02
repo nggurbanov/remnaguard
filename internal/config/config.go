@@ -23,6 +23,7 @@ type Config struct {
 	Limits        LimitsConfig        `yaml:"limits"`
 	Metrics       MetricsConfig       `yaml:"metrics"`
 	Audit         AuditConfig         `yaml:"audit"`
+	Alerts        AlertsConfig        `yaml:"alerts"`
 	Report        ReportConfig        `yaml:"report"`
 	PublicSubs    PublicSubsConfig    `yaml:"public_subscriptions"`
 	Reload        ReloadConfig        `yaml:"reload"`
@@ -83,6 +84,21 @@ type AuditConfig struct {
 	Stdout     bool   `yaml:"stdout"`
 	PepperEnv  string `yaml:"pepper_env"`
 	SQLitePath string `yaml:"sqlite_path"`
+}
+
+type AlertsConfig struct {
+	Enabled  bool                 `yaml:"enabled"`
+	Telegram TelegramAlertsConfig `yaml:"telegram"`
+}
+
+type TelegramAlertsConfig struct {
+	Enabled     bool          `yaml:"enabled"`
+	BotTokenEnv string        `yaml:"bot_token_env"`
+	ChatIDEnv   string        `yaml:"chat_id_env"`
+	Cooldown    time.Duration `yaml:"cooldown"`
+	QueueSize   int           `yaml:"queue_size"`
+	Timeout     time.Duration `yaml:"timeout"`
+	APIBaseURL  string        `yaml:"api_base_url"`
 }
 
 type ReportConfig struct {
@@ -184,6 +200,7 @@ func Defaults() *Config {
 		Compatibility: CompatibilityConfig{RemnawaveVersion: "2.7.4"},
 		Limits:        LimitsConfig{MaxPathLength: 2048, MaxQueryLength: 4096, MaxBodyBytes: 1 << 20, GlobalConcurrency: 128, PerTokenConcurrency: 8, DefaultRate: "600/m", UpstreamBodyBytes: 64 << 20, ShutdownGracePeriod: 10 * time.Second},
 		Audit:         AuditConfig{Stdout: true, PepperEnv: "REMNAGUARD_AUDIT_PEPPER"},
+		Alerts:        AlertsConfig{Telegram: TelegramAlertsConfig{Cooldown: 5 * time.Minute, QueueSize: 100, Timeout: 5 * time.Second, APIBaseURL: "https://api.telegram.org"}},
 		PublicSubs:    PublicSubsConfig{ShortUUIDRegex: `^[A-Za-z0-9_-]{6,64}$`, AllowedClients: []string{"sing-box", "clash", "v2ray", "hiddify"}, RequestHeaderAllowlist: []string{"user-agent", "accept", "x-hwid", "x-device-os", "x-ver-os", "x-device-model", "x-app-version"}, ResponseHeaderAllowlist: []string{"content-type", "content-disposition", "subscription-userinfo", "profile-update-interval", "profile-web-page-url", "support-url", "x-provider-id"}, PerIPConcurrency: 8, PerIPRate: "120/m"},
 	}
 }
@@ -212,6 +229,9 @@ func (c *Config) Validate() error {
 	}
 	if c.configuredBearerSources() != 1 {
 		return errors.New("exactly one upstream bearer source must be configured")
+	}
+	if err := c.validateAlerts(); err != nil {
+		return err
 	}
 	if c.resolveBearer() == "" {
 		return errors.New("configured upstream bearer source must resolve to a non-empty value")
@@ -357,6 +377,49 @@ func (c *Config) Validate() error {
 		if protectedOutboundHeader(name) {
 			return fmt.Errorf("protected or invalid upstream extra header %q", name)
 		}
+	}
+	return nil
+}
+
+func (c *Config) validateAlerts() error {
+	tg := c.Alerts.Telegram
+	if !c.Alerts.Enabled {
+		return nil
+	}
+	if !tg.Enabled {
+		return errors.New("alerts.telegram.enabled is required when alerts.enabled is true")
+	}
+	if strings.TrimSpace(tg.BotTokenEnv) == "" {
+		return errors.New("alerts.telegram.bot_token_env is required")
+	}
+	if strings.TrimSpace(tg.ChatIDEnv) == "" {
+		return errors.New("alerts.telegram.chat_id_env is required")
+	}
+	if strings.TrimSpace(os.Getenv(tg.BotTokenEnv)) == "" {
+		return errors.New("alerts.telegram.bot_token_env must resolve to a non-empty value")
+	}
+	if strings.TrimSpace(os.Getenv(tg.ChatIDEnv)) == "" {
+		return errors.New("alerts.telegram.chat_id_env must resolve to a non-empty value")
+	}
+	if tg.Cooldown <= 0 {
+		return errors.New("alerts.telegram.cooldown must be positive")
+	}
+	if tg.QueueSize < 0 {
+		return errors.New("alerts.telegram.queue_size must not be negative")
+	}
+	if tg.Timeout <= 0 {
+		return errors.New("alerts.telegram.timeout must be positive")
+	}
+	baseURL := strings.TrimSpace(tg.APIBaseURL)
+	if baseURL == "" {
+		return errors.New("alerts.telegram.api_base_url is required")
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return errors.New("alerts.telegram.api_base_url must be absolute")
+	}
+	if u.Scheme != "https" && !isLocalHost(u.Hostname()) {
+		return errors.New("alerts.telegram.api_base_url must be https unless localhost")
 	}
 	return nil
 }

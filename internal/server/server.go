@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nggurbanov/remnaguard/internal/alerts"
 	"github.com/nggurbanov/remnaguard/internal/audit"
 	"github.com/nggurbanov/remnaguard/internal/auth"
 	"github.com/nggurbanov/remnaguard/internal/config"
@@ -35,6 +36,7 @@ type Runtime struct {
 	version string
 	commit  string
 	audit   *audit.Logger
+	alerts  *alerts.Manager
 	metrics *metrics.Registry
 	locks   sync.Map
 	nextGen atomic.Uint64
@@ -65,7 +67,7 @@ func NewRuntime(cfg *config.Config, version, commit string) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Runtime{version: version, commit: commit, audit: auditLogger, metrics: metrics.New()}
+	r := &Runtime{version: version, commit: commit, audit: auditLogger, alerts: alerts.NewManager(cfg.Alerts), metrics: metrics.New()}
 	r.nextGen.Store(1)
 	r.state.Store(st)
 	return r, nil
@@ -81,6 +83,7 @@ func (r *Runtime) Reload(cfg *config.Config) error {
 		return err
 	}
 	r.state.Store(st)
+	r.alerts.Update(cfg.Alerts)
 	if cfg.Compatibility.AssumeVersion == "" {
 		go r.detectVersion(context.Background(), st)
 	}
@@ -1013,6 +1016,14 @@ func (r *Runtime) localHandler() http.Handler {
 
 func (r *Runtime) deny(w http.ResponseWriter, route, tokenID, credentialID, reason string, status int) {
 	r.audit.Emit("request_denied", route, tokenID, credentialID, reason, status)
+	r.alerts.Notify(alerts.Event{
+		Name:      "request_denied",
+		Route:     route,
+		TokenID:   tokenID,
+		Reason:    reason,
+		Status:    status,
+		CreatedAt: time.Now().UTC(),
+	})
 	http.Error(w, fmt.Sprintf("denied: %s", reason), status)
 }
 

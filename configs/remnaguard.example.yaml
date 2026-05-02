@@ -34,6 +34,17 @@ audit:
   pepper_env: "REMNAGUARD_AUDIT_PEPPER"
   sqlite_path: ""
 
+alerts:
+  enabled: false
+  telegram:
+    enabled: false
+    bot_token_env: "REMNAGUARD_ALERTS_TELEGRAM_TOKEN"
+    chat_id_env: "REMNAGUARD_ALERTS_TELEGRAM_CHAT_ID"
+    cooldown: 5m
+    queue_size: 100
+    timeout: 5s
+    api_base_url: "https://api.telegram.org"
+
 report:
   enabled: false
   unsafe_report_proxy: false

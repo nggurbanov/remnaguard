@@ -22,6 +22,7 @@ RemnaGuard ставится между клиентами и Remnawave API. Priv
 - upstream auth replacement и stripping для hop-by-hop, forwarded и protected headers;
 - no redirect following, disabled automatic decompression, HTTPS-by-default upstreams, custom CA и optional mTLS;
 - local `/healthz`, `/readyz`, `/version`, `/metrics` listener;
+- optional Telegram alerts for denied requests;
 - optional pure-Go SQLite audit sink;
 - SIGHUP config reload с полной validation до swap;
 - JSON audit events без request/response bodies.
@@ -188,6 +189,7 @@ compatibility:
 - Headers listed in `Connection` are stripped too.
 - Request and response bodies are not logged.
 - Metrics use bounded labels only.
+- Telegram alerts never include request bodies, headers, raw tokens, credential digests, or subscription URLs.
 - Inbound HTTP/2 is denied by the raw request validator in v1.
 
 Subscription URLs are bearer-like secrets. Do not publish or log them.

@@ -16,6 +16,27 @@ api.example.com {
 
 Keep `/healthz`, `/readyz`, `/version`, and `/metrics` on the local listener.
 
+## Telegram Deny Alerts
+
+RemnaGuard can send Telegram notifications for `request_denied` audit events:
+
+```yaml
+alerts:
+  enabled: true
+  telegram:
+    enabled: true
+    bot_token_env: "REMNAGUARD_ALERTS_TELEGRAM_TOKEN"
+    chat_id_env: "REMNAGUARD_ALERTS_TELEGRAM_CHAT_ID"
+    cooldown: 5m
+    queue_size: 100
+    timeout: 5s
+```
+
+Store the bot token and chat id in environment variables, not in config files.
+Alerts are sent asynchronously and are best-effort; Telegram failures do not
+block proxy traffic or affect readiness. Alert messages include only token id,
+route, deny reason, status, count, and timestamps.
+
 ## Nginx
 
 ```nginx

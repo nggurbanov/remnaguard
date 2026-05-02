@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
 
 func TestValidateRejectsNonPositiveCoreLimits(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
@@ -86,6 +91,66 @@ func TestValidateRejectsUnsetPublicSubscriptionAuthEnv(t *testing.T) {
 	cfg.PublicSubs.AuthHeaderEnv = "MISSING_PUBLIC_SUB_AUTH"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected missing public subscription auth env to be rejected")
+	}
+}
+
+func TestValidateAcceptsTelegramAlerts(t *testing.T) {
+	t.Setenv("ALERT_TOKEN", "token")
+	t.Setenv("ALERT_CHAT", "123")
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.Alerts.Enabled = true
+	cfg.Alerts.Telegram.Enabled = true
+	cfg.Alerts.Telegram.BotTokenEnv = "ALERT_TOKEN"
+	cfg.Alerts.Telegram.ChatIDEnv = "ALERT_CHAT"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid alerts config: %v", err)
+	}
+}
+
+func TestValidateRejectsTelegramAlertsWithoutEnv(t *testing.T) {
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.Alerts.Enabled = true
+	cfg.Alerts.Telegram.Enabled = true
+	cfg.Alerts.Telegram.BotTokenEnv = "MISSING_ALERT_TOKEN"
+	cfg.Alerts.Telegram.ChatIDEnv = "MISSING_ALERT_CHAT"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected missing telegram alert env to be rejected")
+	}
+}
+
+func TestLoadParsesTelegramAlertDurations(t *testing.T) {
+	t.Setenv("ALERT_TOKEN", "token")
+	t.Setenv("ALERT_CHAT", "123")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "remnaguard.yaml")
+	if err := os.WriteFile(path, []byte(`
+upstream:
+  base_url: "https://example.test"
+  bearer: "root"
+alerts:
+  enabled: true
+  telegram:
+    enabled: true
+    bot_token_env: "ALERT_TOKEN"
+    chat_id_env: "ALERT_CHAT"
+    cooldown: 3m
+    timeout: 2s
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Alerts.Telegram.Cooldown != 3*time.Minute {
+		t.Fatalf("unexpected cooldown %s", cfg.Alerts.Telegram.Cooldown)
+	}
+	if cfg.Alerts.Telegram.Timeout != 2*time.Second {
+		t.Fatalf("unexpected timeout %s", cfg.Alerts.Telegram.Timeout)
 	}
 }
 
