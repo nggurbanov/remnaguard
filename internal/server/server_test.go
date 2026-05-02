@@ -756,18 +756,17 @@ func TestSubscriptionPageConfigDetailIsDeniedOutsideAllowlist(t *testing.T) {
 	}
 }
 
-func TestSubscriptionSubpageConfigRequiresAllowedConfig(t *testing.T) {
+func TestSubscriptionSubpageConfigProxiesReadOnlyResponse(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
-	allowed := "11111111-1111-4111-8111-111111111111"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"subscriptionPageConfigUuid":"` + allowed + `","theme":"bat"}}`))
+		_, _ = w.Write([]byte(`{"response":{"theme":"bat"}}`))
 	}))
 	defer upstream.Close()
 
 	cfg := testConfig(upstream.URL, "secret")
 	cfg.Tokens[0].Scopes = []string{"subscriptions:read"}
-	cfg.Tokens[0].Constraints.AllowedSubscriptionPageConfigs = []string{allowed}
+	cfg.Tokens[0].Constraints.AllowedSubscriptionPageConfigs = []string{"11111111-1111-4111-8111-111111111111"}
 	rt, err := NewRuntime(cfg, "test", "")
 	if err != nil {
 		t.Fatal(err)

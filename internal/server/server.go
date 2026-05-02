@@ -610,7 +610,7 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 		return remnawave.OwnsUser(tok, user)
 	case "squad.internal.read", "squad.external.read":
 		return redactSquadResponse(res)
-	case "subscription_page_config.read", "subscription.subpage_config":
+	case "subscription_page_config.read":
 		return enforceSubscriptionPageConfigResponse(tok, res)
 	default:
 		return nil
