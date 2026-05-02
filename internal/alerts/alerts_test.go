@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,9 +77,9 @@ func TestTelegramAlertSendsDeniedRequestMessage(t *testing.T) {
 }
 
 func TestTelegramAlertCooldownSuppressesDuplicateBurst(t *testing.T) {
-	count := 0
+	var count atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count++
+		count.Add(1)
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer ts.Close()
@@ -111,7 +112,7 @@ func TestTelegramAlertCooldownSuppressesDuplicateBurst(t *testing.T) {
 		})
 	}
 	time.Sleep(100 * time.Millisecond)
-	if count != 1 {
-		t.Fatalf("expected one telegram request during cooldown, got %d", count)
+	if got := count.Load(); got != 1 {
+		t.Fatalf("expected one telegram request during cooldown, got %d", got)
 	}
 }
