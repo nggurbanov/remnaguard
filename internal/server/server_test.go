@@ -642,6 +642,146 @@ func TestSquadDetailResponseIsRedacted(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedSubscriptionRouteWorksWhenPublicDisabled(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer root" {
+			t.Fatalf("unexpected upstream auth %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.RequestURI() != "/api/sub/abcdef/info" {
+			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
+		}
+		_, _ = w.Write([]byte(`{"response":{"username":"restricted-a"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.PublicSubs.Enabled = false
+	cfg.Tokens[0].Scopes = []string{"subscriptions:read"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/sub/abcdef/info", nil)
+	req.RequestURI = "/api/sub/abcdef/info"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubscriptionRouteWithoutAuthStillRequiresPublicMode(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("unauthenticated disabled public subscription must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.PublicSubs.Enabled = false
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/sub/abcdef/info", nil)
+	req.RequestURI = "/api/sub/abcdef/info"
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubscriptionPageConfigListIsFiltered(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	allowed := "11111111-1111-4111-8111-111111111111"
+	foreign := "22222222-2222-4222-8222-222222222222"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RequestURI() != "/api/subscription-page-configs/" {
+			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"configs":[{"uuid":"` + allowed + `","name":"Bat"},{"uuid":"` + foreign + `","name":"Redivo"}],"total":2}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"subscription-pages:read"}
+	cfg.Tokens[0].Constraints.AllowedSubscriptionPageConfigs = []string{allowed}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/subscription-page-configs/", nil)
+	req.RequestURI = "/api/subscription-page-configs/"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), allowed) || strings.Contains(rec.Body.String(), foreign) {
+		t.Fatalf("unexpected filtered body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"total":1`) {
+		t.Fatalf("expected redacted total, got %s", rec.Body.String())
+	}
+}
+
+func TestSubscriptionPageConfigDetailIsDeniedOutsideAllowlist(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	allowed := "11111111-1111-4111-8111-111111111111"
+	foreign := "22222222-2222-4222-8222-222222222222"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"` + foreign + `","name":"Redivo"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"subscription-pages:read"}
+	cfg.Tokens[0].Constraints.AllowedSubscriptionPageConfigs = []string{allowed}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/subscription-page-configs/"+foreign, nil)
+	req.RequestURI = "/api/subscription-page-configs/" + foreign
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubscriptionSubpageConfigRequiresAllowedConfig(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	allowed := "11111111-1111-4111-8111-111111111111"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"subscriptionPageConfigUuid":"` + allowed + `","theme":"bat"}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"subscriptions:read"}
+	cfg.Tokens[0].Constraints.AllowedSubscriptionPageConfigs = []string{allowed}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/subscriptions/subpage-config/abcdef", nil)
+	req.RequestURI = "/api/subscriptions/subpage-config/abcdef"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func testConfig(upstreamURL, secret string) *config.Config {
 	_ = os.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	cfg := config.Defaults()

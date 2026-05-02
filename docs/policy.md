@@ -41,13 +41,15 @@ Configured token constraints are enforced on user bodies and response-side user 
 - description length.
 - per-route request body field allowlists.
 
-Global, bulk, infrastructure, token, config, node, host, and settings routes are privileged unless a route-specific restricted policy exists. User and squad list routes are policy-enforced only with response filtering.
+Global, bulk, infrastructure, token, config, node, host, and settings routes are privileged unless a route-specific restricted policy exists. User, squad, and subscription page config list routes are policy-enforced only with response filtering.
 
 ## Preflight And Response Gates
 
 Singleton user reads by UUID, username, and Telegram ID validate the returned user object before returning it to the caller. Per-user HWID routes preflight the owning user before forwarding. Squad reads check configured squad allowlists before forwarding.
 
-`GET /api/users`, `GET /api/internal-squads`, and `GET /api/external-squads` filter returned arrays/envelopes to objects allowed by token constraints. Count-style metadata is rewritten to the visible object count so hidden object totals are not exposed as-is.
+`GET /api/users`, `GET /api/internal-squads`, `GET /api/external-squads`, and `GET /api/subscription-page-configs` filter returned arrays/envelopes to objects allowed by token constraints. Count-style metadata is rewritten to the visible object count so hidden object totals are not exposed as-is.
+
+Subscription page config detail endpoints enforce `allowed_subscription_page_configs` on the returned config object. Public subscription routes under `/api/sub/...` can also be used by authenticated server-side callers with `subscriptions:read` when public subscription forwarding is disabled.
 
 ## Restricted Writes
 

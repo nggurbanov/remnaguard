@@ -203,9 +203,17 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, route.Name, "", "", err.Error(), status)
 			return
 		}
-		if route.Support == routes.PublicSubscription {
+		if route.Support == routes.PublicSubscription && cfg.PublicSubs.Enabled {
 			r.handlePublicSub(w, req, st, route, path, rawQuery)
 			return
+		}
+		if route.Support == routes.PublicSubscription {
+			if req.Header.Get("Authorization") == "" {
+				r.deny(w, route.Name, "", "", "public_subscriptions_disabled", http.StatusForbidden)
+				return
+			}
+			route.Support = routes.PolicyEnforced
+			route.Scopes = []string{"subscriptions:read", "subscription:read"}
 		}
 		parsed, err := auth.ParseBearer(req.Header.Get("Authorization"))
 		if err != nil {
@@ -602,6 +610,8 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 		return remnawave.OwnsUser(tok, user)
 	case "squad.internal.read", "squad.external.read":
 		return redactSquadResponse(res)
+	case "subscription_page_config.read", "subscription.subpage_config":
+		return enforceSubscriptionPageConfigResponse(tok, res)
 	default:
 		return nil
 	}
@@ -645,9 +655,63 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 			}
 			return allowed
 		})
+	case "subscription_page_config.list":
+		return filterJSONList(res, func(item any) bool {
+			return subscriptionPageConfigAllowed(tok, objectUUID(item))
+		})
 	default:
 		return nil
 	}
+}
+
+func enforceSubscriptionPageConfigResponse(tok *config.TokenPolicy, res *proxy.Response) error {
+	if len(tok.Constraints.AllowedSubscriptionPageConfigs) == 0 {
+		return nil
+	}
+	var root any
+	dec := json.NewDecoder(bytes.NewReader(res.Body))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return err
+	}
+	if subscriptionPageConfigNodeAllowed(tok, root) {
+		return nil
+	}
+	return fmt.Errorf("subscription_page_config_denied")
+}
+
+func subscriptionPageConfigNodeAllowed(tok *config.TokenPolicy, node any) bool {
+	switch typed := node.(type) {
+	case map[string]any:
+		if subscriptionPageConfigAllowed(tok, objectUUID(typed)) {
+			return true
+		}
+		for _, key := range []string{"subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid", "uuid"} {
+			if s, ok := typed[key].(string); ok && subscriptionPageConfigAllowed(tok, s) {
+				return true
+			}
+		}
+		for _, key := range []string{"response", "config", "subscriptionPageConfig", "subscription_page_config", "subpageConfig", "subpage_config"} {
+			child, ok := typed[key]
+			if ok && subscriptionPageConfigNodeAllowed(tok, child) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if subscriptionPageConfigNodeAllowed(tok, item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func subscriptionPageConfigAllowed(tok *config.TokenPolicy, uuid string) bool {
+	if len(tok.Constraints.AllowedSubscriptionPageConfigs) == 0 {
+		return true
+	}
+	return uuid != "" && contains(tok.Constraints.AllowedSubscriptionPageConfigs, uuid)
 }
 
 func redactSquadResponse(res *proxy.Response) error {
@@ -734,7 +798,7 @@ func filterListNode(node any, keep func(any) bool) (any, int, bool) {
 		}
 		return out, len(out), true
 	case map[string]any:
-		for _, key := range []string{"response", "users", "internalSquads", "externalSquads", "items", "data"} {
+		for _, key := range []string{"response", "users", "internalSquads", "externalSquads", "subscriptionPageConfigs", "subscription_page_configs", "configs", "items", "data"} {
 			child, ok := typed[key]
 			if !ok {
 				continue

@@ -85,6 +85,9 @@ func remnawave274Catalog() []Route {
 		{Name: "sub.info", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}/info", Support: PublicSubscription, Group: "subscriptions"},
 		{Name: "sub.base", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}", Support: PublicSubscription, Group: "subscriptions"},
 		{Name: "sub.client", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}/{clientType}", Support: PublicSubscription, Group: "subscriptions"},
+		{Name: "subscription_page_config.list", Method: http.MethodGet, Pattern: "/api/subscription-page-configs", Support: PolicyEnforced, Scopes: []string{"subscription-pages:read"}, Group: "subscription-page-configs"},
+		{Name: "subscription_page_config.read", Method: http.MethodGet, Pattern: "/api/subscription-page-configs/{uuid}", Support: PolicyEnforced, Scopes: []string{"subscription-pages:read"}, Group: "subscription-page-configs"},
+		{Name: "subscription.subpage_config", Method: http.MethodGet, Pattern: "/api/subscriptions/subpage-config/{shortUuid}", Support: PolicyEnforced, Scopes: []string{"subscriptions:read", "subscription:read"}, Group: "subscriptions"},
 	}
 	byKey := map[string]int{}
 	for i := range routes {
@@ -307,6 +310,9 @@ func Match(catalog []Route, method, path string) (Route, bool) {
 		if r.Method == method && r.re.MatchString(path) {
 			return r, true
 		}
+	}
+	if path != "/api/" && strings.HasSuffix(path, "/") {
+		return Match(catalog, method, strings.TrimRight(path, "/"))
 	}
 	return Route{}, false
 }

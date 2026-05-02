@@ -128,7 +128,7 @@ This repository contains the v1 service baseline:
 - token add, rotate, disable, and prune commands with atomic YAML writes, backups, and validation rollback;
 - `privileged`, `policy-enforced`, `unsupported`, and `public-subscription` route support levels;
 - explicit query allowlists, JSON content enforcement, duplicate-key rejection, body field allowlists, and configured value limits;
-- response-side user ownership checks, filtered user/squad list responses, and HWID user preflight checks;
+- response-side user ownership checks, filtered user/squad/subscription-page-config list responses, subscription page config allowlist checks, and HWID user preflight checks;
 - restricted write/action support behind explicit `write_safety.enable_restricted_writes` plus `single_writer` gates, with per-resource in-memory locks and post-write verification;
 - isolated public subscription forwarding, disabled by default, with request/response header allowlists and per-IP limits;
 - upstream auth replacement and hop-by-hop/header stripping;

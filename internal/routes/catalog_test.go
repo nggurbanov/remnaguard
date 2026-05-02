@@ -24,6 +24,23 @@ func TestPublicSubscriptionRoute(t *testing.T) {
 	}
 }
 
+func TestSubscriptionPageConfigRoutesArePolicyEnforced(t *testing.T) {
+	for _, path := range []string{
+		"/api/subscription-page-configs",
+		"/api/subscription-page-configs/",
+		"/api/subscription-page-configs/11111111-1111-4111-8111-111111111111",
+		"/api/subscriptions/subpage-config/abcdef",
+	} {
+		route, ok := Match(Catalog("2.7.4"), http.MethodGet, path)
+		if !ok {
+			t.Fatalf("route not found: %s", path)
+		}
+		if route.Support != PolicyEnforced {
+			t.Fatalf("%s support = %s, want %s", path, route.Support, PolicyEnforced)
+		}
+	}
+}
+
 func TestCatalogMetadataIsStrictClean(t *testing.T) {
 	res := validateCatalog(Catalog("2.7.4"))
 	if len(res.Invalid) > 0 || len(res.Duplicates) > 0 {
