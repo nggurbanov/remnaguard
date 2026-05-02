@@ -62,6 +62,7 @@ func remnawave274Catalog() []Route {
 		{Name: "user.read.uuid", Method: http.MethodGet, Pattern: "/api/users/{uuid}", Support: PolicyEnforced, Scopes: []string{"users:read"}, QueryAllowed: []string{"includeHwid", "includeSubscription"}, Group: "users"},
 		{Name: "user.read.username", Method: http.MethodGet, Pattern: "/api/users/by-username/{username}", Support: PolicyEnforced, Scopes: []string{"users:read"}, QueryAllowed: []string{"includeHwid", "includeSubscription"}, Group: "users"},
 		{Name: "user.read.telegram", Method: http.MethodGet, Pattern: "/api/users/by-telegram-id/{telegramId}", Support: PolicyEnforced, Scopes: []string{"users:read"}, QueryAllowed: []string{"includeHwid", "includeSubscription"}, Group: "users"},
+		{Name: "user.list", Method: http.MethodGet, Pattern: "/api/users", Support: PolicyEnforced, Scopes: []string{"users:read"}, QueryAllowed: []string{"page", "size", "limit", "offset", "search", "username", "includeHwid", "includeSubscription"}, Group: "users"},
 		{Name: "user.create", Method: http.MethodPost, Pattern: "/api/users", Support: Privileged, Scopes: []string{"remnawave:*"}, BodyLimit: 65536, BodyObject: true, AllowedFields: userFields(), Group: "users"},
 		{Name: "user.update", Method: http.MethodPatch, Pattern: "/api/users", Support: Privileged, Scopes: []string{"remnawave:*"}, BodyLimit: 65536, BodyObject: true, AllowedFields: userUpdateFields(), Group: "users"},
 		{Name: "user.delete", Method: http.MethodDelete, Pattern: "/api/users/{uuid}", Support: Privileged, Scopes: []string{"remnawave:*"}, Group: "users"},
@@ -75,6 +76,8 @@ func remnawave274Catalog() []Route {
 		{Name: "hwid.delete_all", Method: http.MethodPost, Pattern: "/api/hwid/devices/delete-all", Support: Privileged, Scopes: []string{"remnawave:*"}, BodyLimit: 8192, BodyObject: true, AllowedFields: []string{"userUuid"}, Group: "hwid"},
 		{Name: "squad.internal.read", Method: http.MethodGet, Pattern: "/api/internal-squads/{uuid}", Support: PolicyEnforced, Scopes: []string{"squads:read"}, Group: "internal-squads"},
 		{Name: "squad.external.read", Method: http.MethodGet, Pattern: "/api/external-squads/{uuid}", Support: PolicyEnforced, Scopes: []string{"squads:read"}, Group: "external-squads"},
+		{Name: "squad.internal.list", Method: http.MethodGet, Pattern: "/api/internal-squads", Support: PolicyEnforced, Scopes: []string{"squads:read"}, QueryAllowed: []string{"page", "size", "limit", "offset", "search"}, Group: "internal-squads"},
+		{Name: "squad.external.list", Method: http.MethodGet, Pattern: "/api/external-squads", Support: PolicyEnforced, Scopes: []string{"squads:read"}, QueryAllowed: []string{"page", "size", "limit", "offset", "search"}, Group: "external-squads"},
 		{Name: "system.health", Method: http.MethodGet, Pattern: "/api/system/health", Support: PolicyEnforced, Scopes: []string{"system:read"}, Group: "system"},
 		{Name: "system.metadata", Method: http.MethodGet, Pattern: "/api/system/metadata", Support: PolicyEnforced, Scopes: []string{"metadata:read"}, Group: "metadata"},
 		{Name: "system.bandwidth", Method: http.MethodGet, Pattern: "/api/system/stats/bandwidth", Support: PolicyEnforced, Scopes: []string{"system:read"}, Group: "bandwidth-stats"},
@@ -292,11 +295,11 @@ PUT /api/metadata/user/{uuid}
 `
 
 func userFields() []string {
-	return []string{"username", "status", "shortUuid", "trojanPassword", "vlessUuid", "ssPassword", "expireAt", "createdAt", "lastTrafficResetAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "uuid", "externalSquadUuid"}
+	return []string{"username", "status", "shortUuid", "short_uuid", "trojanPassword", "vlessUuid", "ssPassword", "expireAt", "createdAt", "lastTrafficResetAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "telegram_id", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "uuid", "externalSquadUuid", "external_squad_uuid", "subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid"}
 }
 
 func userUpdateFields() []string {
-	return []string{"username", "uuid", "status", "expireAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "externalSquadUuid"}
+	return []string{"username", "uuid", "status", "expireAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "telegram_id", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "externalSquadUuid", "external_squad_uuid", "subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid"}
 }
 
 func Match(catalog []Route, method, path string) (Route, bool) {

@@ -1,0 +1,19 @@
+# Intended client: analytics job that reads metadata and singleton user records.
+# Expected allowed routes: system health/stats/metadata, singleton user reads, filtered user list.
+# Expected denied routes: writes, infra routes, token/admin routes.
+# Tradeoff: list responses are filtered after upstream pagination, so hidden objects may reduce page density.
+tokens:
+  - id: analytics-readonly
+    scopes:
+      - metadata:read
+      - system:read
+      - users:read
+    constraints:
+      username_prefix: "tenant-a-"
+      allowed_internal_squads:
+        - "00000000-0000-0000-0000-000000000001"
+      allowed_external_squads:
+        - "00000000-0000-0000-0000-000000000101"
+    credentials:
+      - id: analytics-readonly-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"

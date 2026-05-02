@@ -1,0 +1,20 @@
+# Intended client: support tool with exact user lookup and squad metadata reads.
+# Expected allowed routes: singleton user reads, HWID reads, selected squad reads.
+# Expected denied routes: all writes, infra routes, token/admin routes.
+# Tradeoff: list responses are filtered after upstream pagination, so support should prefer exact lookup.
+tokens:
+  - id: support-readonly
+    scopes:
+      - users:read
+      - hwid:read
+      - squads:read
+      - metadata:read
+    constraints:
+      username_contains: "tenant-a-"
+      allowed_internal_squads:
+        - "00000000-0000-0000-0000-000000000001"
+      allowed_external_squads:
+        - "00000000-0000-0000-0000-000000000101"
+    credentials:
+      - id: support-readonly-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"

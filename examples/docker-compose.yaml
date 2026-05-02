@@ -1,0 +1,15 @@
+services:
+  remnaguard:
+    image: ghcr.io/nggurbanov/remnaguard:latest
+    command: ["serve", "-c", "/etc/remnaguard/remnaguard.yaml"]
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    environment:
+      REMNAWAVE_ROOT_BEARER: "${REMNAWAVE_ROOT_BEARER:?set upstream bearer}"
+      REMNAGUARD_TOKEN_PEPPER: "${REMNAGUARD_TOKEN_PEPPER:?set token pepper}"
+      REMNAGUARD_AUDIT_PEPPER: "${REMNAGUARD_AUDIT_PEPPER:?set audit pepper}"
+    volumes:
+      - ./remnaguard.yaml:/etc/remnaguard/remnaguard.yaml:ro
+      - ./tokens.d:/etc/remnaguard/tokens.d:ro
+    restart: unless-stopped

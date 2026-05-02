@@ -1,0 +1,33 @@
+# Intended client: human-operated tenant admin tool with narrow read/write access.
+# Expected allowed routes: singleton user reads, user create/update/action, HWID write.
+# Expected denied routes: bulk updates, subscription page writes, squads, nodes, hosts.
+# Tradeoff: this is still a powerful token; keep short credential rotation and audit enabled.
+tokens:
+  - id: tenant-operator
+    scopes:
+      - users:read
+      - users:create
+      - users:update
+      - users:action
+      - hwid:read
+      - hwid:write
+      - squads:read
+    constraints:
+      username_regex: "^tenant-a-[a-z0-9._-]{3,64}$"
+      email_domains:
+        - "example.com"
+      telegram_id_ranges:
+        - min: 100000000
+          max: 199999999
+      allowed_internal_squads:
+        - "00000000-0000-0000-0000-000000000001"
+      allowed_external_squads:
+        - "00000000-0000-0000-0000-000000000101"
+      allowed_subscription_page_configs:
+        - "00000000-0000-0000-0000-000000000201"
+      max_traffic_limit_bytes: 1099511627776
+      forbid_unlimited_traffic: true
+      max_description_length: 512
+    credentials:
+      - id: tenant-operator-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"

@@ -269,6 +269,10 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
+		if err := filterResponsePolicy(route, tok, upstreamRes); err != nil {
+			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusBadGateway)
+			return
+		}
 		if err := r.postWriteVerify(req, st, route, tok, upstreamRes); err != nil {
 			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
@@ -377,9 +381,17 @@ func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Rout
 	if err := jsonpolicy.ValidateFields(obj, route.AllowedFields); err != nil {
 		return err
 	}
+	if err := validateTokenRequestFields(obj, route, tok); err != nil {
+		return err
+	}
 	if strings.HasPrefix(route.Name, "user.") {
 		if err := validateUserConstraints(obj, tok); err != nil {
 			return err
+		}
+	}
+	if strings.HasPrefix(route.Name, "hwid.") {
+		if _, ok := obj["userUuid"]; !ok {
+			return fmt.Errorf("missing_user_uuid")
 		}
 	}
 	req.Body = io.NopCloser(bytes.NewReader(body))
@@ -428,13 +440,35 @@ func validateUserConstraints(obj map[string]json.RawMessage, tok *config.TokenPo
 		return nil
 	}
 	c := tok.Constraints
-	if raw, ok := obj["username"]; ok && c.UsernamePrefix != "" {
+	if raw, ok := obj["username"]; ok {
 		var username string
 		if err := json.Unmarshal(raw, &username); err != nil {
 			return fmt.Errorf("invalid_username")
 		}
-		if !strings.HasPrefix(username, c.UsernamePrefix) {
-			return fmt.Errorf("username_prefix_denied")
+		if err := remnawave.ValidateUsername(c, username); err != nil {
+			return err
+		}
+	}
+	if raw, ok := obj["email"]; ok {
+		var email *string
+		if err := json.Unmarshal(raw, &email); err != nil {
+			return fmt.Errorf("invalid_email")
+		}
+		if email != nil {
+			if err := remnawave.ValidateEmail(c, *email); err != nil {
+				return err
+			}
+		}
+	}
+	if raw, ok := obj["telegramId"]; ok {
+		var id *int64
+		if err := json.Unmarshal(raw, &id); err != nil {
+			return fmt.Errorf("invalid_telegram_id")
+		}
+		if id != nil {
+			if err := remnawave.ValidateTelegramID(c, *id); err != nil {
+				return err
+			}
 		}
 	}
 	if raw, ok := obj["description"]; ok && c.MaxDescriptionLength > 0 {
@@ -465,6 +499,87 @@ func validateUserConstraints(obj map[string]json.RawMessage, tok *config.TokenPo
 			return fmt.Errorf("traffic_limit_too_large")
 		}
 	}
+	if err := validateSquadBodyFields(obj, c); err != nil {
+		return err
+	}
+	if err := validateSubscriptionPageConfig(obj, c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateTokenRequestFields(obj map[string]json.RawMessage, route routes.Route, tok *config.TokenPolicy) error {
+	if tok == nil || len(tok.Constraints.AllowedRequestFields) == 0 {
+		return nil
+	}
+	allowed, ok := tok.Constraints.AllowedRequestFields[route.Name]
+	if !ok {
+		allowed, ok = tok.Constraints.AllowedRequestFields[route.Method+" "+route.Pattern]
+	}
+	if !ok {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, field := range allowed {
+		set[field] = true
+	}
+	for field := range obj {
+		if !set[field] {
+			return fmt.Errorf("request_field_denied")
+		}
+	}
+	return nil
+}
+
+func validateSquadBodyFields(obj map[string]json.RawMessage, c config.Constraints) error {
+	if raw, ok := obj["activeInternalSquads"]; ok && len(c.AllowedInternalSquads) > 0 {
+		var ids []string
+		if err := json.Unmarshal(raw, &ids); err != nil {
+			var refs []struct {
+				UUID string `json:"uuid"`
+			}
+			if err := json.Unmarshal(raw, &refs); err != nil {
+				return fmt.Errorf("invalid_internal_squads")
+			}
+			for _, ref := range refs {
+				ids = append(ids, ref.UUID)
+			}
+		}
+		for _, id := range ids {
+			if id != "" && !contains(c.AllowedInternalSquads, id) {
+				return fmt.Errorf("internal_squad_denied")
+			}
+		}
+	}
+	if raw, ok := obj["externalSquadUuid"]; ok && len(c.AllowedExternalSquads) > 0 {
+		var id *string
+		if err := json.Unmarshal(raw, &id); err != nil {
+			return fmt.Errorf("invalid_external_squad")
+		}
+		if id != nil && *id != "" && !contains(c.AllowedExternalSquads, *id) {
+			return fmt.Errorf("external_squad_denied")
+		}
+	}
+	return nil
+}
+
+func validateSubscriptionPageConfig(obj map[string]json.RawMessage, c config.Constraints) error {
+	if len(c.AllowedSubscriptionPageConfigs) == 0 {
+		return nil
+	}
+	for _, field := range []string{"subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid"} {
+		raw, ok := obj[field]
+		if !ok {
+			continue
+		}
+		var id *string
+		if err := json.Unmarshal(raw, &id); err != nil {
+			return fmt.Errorf("invalid_subscription_page_config")
+		}
+		if id != nil && *id != "" && !contains(c.AllowedSubscriptionPageConfigs, *id) {
+			return fmt.Errorf("subscription_page_config_denied")
+		}
+	}
 	return nil
 }
 
@@ -485,6 +600,114 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 	default:
 		return nil
 	}
+}
+
+func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *proxy.Response) error {
+	if route.Support != routes.PolicyEnforced || res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil
+	}
+	switch route.Name {
+	case "user.list":
+		return filterJSONList(res, func(item any) bool {
+			body, err := json.Marshal(item)
+			if err != nil {
+				return false
+			}
+			user, err := remnawave.DecodeUser(body)
+			return err == nil && remnawave.OwnsUser(tok, user) == nil
+		})
+	case "squad.internal.list":
+		return filterJSONList(res, func(item any) bool {
+			if len(tok.Constraints.AllowedInternalSquads) == 0 {
+				return true
+			}
+			return contains(tok.Constraints.AllowedInternalSquads, objectUUID(item))
+		})
+	case "squad.external.list":
+		return filterJSONList(res, func(item any) bool {
+			if len(tok.Constraints.AllowedExternalSquads) == 0 {
+				return true
+			}
+			return contains(tok.Constraints.AllowedExternalSquads, objectUUID(item))
+		})
+	default:
+		return nil
+	}
+}
+
+func filterJSONList(res *proxy.Response, keep func(any) bool) error {
+	var root any
+	dec := json.NewDecoder(bytes.NewReader(res.Body))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return err
+	}
+	filtered, count, ok := filterListNode(root, keep)
+	if !ok {
+		return fmt.Errorf("unfilterable_list_response")
+	}
+	redactCountMetadata(filtered, count)
+	body, err := json.Marshal(filtered)
+	if err != nil {
+		return err
+	}
+	res.Body = body
+	res.Header.Del("Content-Length")
+	return nil
+}
+
+func filterListNode(node any, keep func(any) bool) (any, int, bool) {
+	switch typed := node.(type) {
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if keep(item) {
+				out = append(out, item)
+			}
+		}
+		return out, len(out), true
+	case map[string]any:
+		for _, key := range []string{"response", "users", "items", "data"} {
+			child, ok := typed[key]
+			if !ok {
+				continue
+			}
+			filtered, count, ok := filterListNode(child, keep)
+			if ok {
+				typed[key] = filtered
+				return typed, count, true
+			}
+		}
+	}
+	return nil, 0, false
+}
+
+func redactCountMetadata(node any, visible int) {
+	obj, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	for _, key := range []string{"total", "count", "totalItems", "total_items", "recordsTotal", "records_total"} {
+		if _, ok := obj[key]; ok {
+			obj[key] = visible
+		}
+	}
+	for _, key := range []string{"response", "meta", "pagination"} {
+		if child, ok := obj[key]; ok {
+			redactCountMetadata(child, visible)
+		}
+	}
+}
+
+func objectUUID(item any) string {
+	obj, ok := item.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if s, ok := obj["uuid"].(string); ok {
+		return s
+	}
+	return ""
 }
 
 func (r *Runtime) preflight(req *http.Request, st *runtimeState, route routes.Route, path string, tok *config.TokenPolicy) error {
@@ -555,7 +778,7 @@ func (r *Runtime) postWriteVerify(req *http.Request, st *runtimeState, route rou
 		if err == nil {
 			return remnawave.OwnsUser(tok, user)
 		}
-		return nil
+		return fmt.Errorf("post_write_unverifiable")
 	case "user.update":
 		return r.preflightUser(req, st, bodyString(req, "uuid"), tok)
 	case "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke":

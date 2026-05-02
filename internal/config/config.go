@@ -131,12 +131,25 @@ type Credential struct {
 }
 
 type Constraints struct {
-	UsernamePrefix         string   `yaml:"username_prefix" json:"username_prefix"`
-	AllowedInternalSquads  []string `yaml:"allowed_internal_squads" json:"allowed_internal_squads"`
-	AllowedExternalSquads  []string `yaml:"allowed_external_squads" json:"allowed_external_squads"`
-	MaxTrafficLimitBytes   int64    `yaml:"max_traffic_limit_bytes" json:"max_traffic_limit_bytes"`
-	ForbidUnlimitedTraffic bool     `yaml:"forbid_unlimited_traffic" json:"forbid_unlimited_traffic"`
-	MaxDescriptionLength   int      `yaml:"max_description_length" json:"max_description_length"`
+	UsernamePrefix                 string              `yaml:"username_prefix" json:"username_prefix"`
+	UsernameSuffix                 string              `yaml:"username_suffix" json:"username_suffix"`
+	UsernameContains               string              `yaml:"username_contains" json:"username_contains"`
+	UsernameRegex                  string              `yaml:"username_regex" json:"username_regex"`
+	EmailContains                  string              `yaml:"email_contains" json:"email_contains"`
+	EmailDomains                   []string            `yaml:"email_domains" json:"email_domains"`
+	TelegramIDRanges               []IDRange           `yaml:"telegram_id_ranges" json:"telegram_id_ranges"`
+	AllowedInternalSquads          []string            `yaml:"allowed_internal_squads" json:"allowed_internal_squads"`
+	AllowedExternalSquads          []string            `yaml:"allowed_external_squads" json:"allowed_external_squads"`
+	AllowedSubscriptionPageConfigs []string            `yaml:"allowed_subscription_page_configs" json:"allowed_subscription_page_configs"`
+	MaxTrafficLimitBytes           int64               `yaml:"max_traffic_limit_bytes" json:"max_traffic_limit_bytes"`
+	ForbidUnlimitedTraffic         bool                `yaml:"forbid_unlimited_traffic" json:"forbid_unlimited_traffic"`
+	MaxDescriptionLength           int                 `yaml:"max_description_length" json:"max_description_length"`
+	AllowedRequestFields           map[string][]string `yaml:"allowed_request_fields" json:"allowed_request_fields"`
+}
+
+type IDRange struct {
+	Min int64 `yaml:"min" json:"min"`
+	Max int64 `yaml:"max" json:"max"`
 }
 
 func Load(path string) (*Config, error) {
@@ -307,6 +320,29 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("unknown scope %q on token %q", scope, tok.ID)
 			}
 		}
+		if tok.Constraints.UsernameRegex != "" {
+			if _, err := regexp.Compile(tok.Constraints.UsernameRegex); err != nil {
+				return fmt.Errorf("invalid username_regex on token %q: %w", tok.ID, err)
+			}
+		}
+		for _, r := range tok.Constraints.TelegramIDRanges {
+			if r.Min < 0 || r.Max < r.Min {
+				return fmt.Errorf("invalid telegram_id_ranges on token %q", tok.ID)
+			}
+		}
+		for routeName, fields := range tok.Constraints.AllowedRequestFields {
+			if strings.TrimSpace(routeName) == "" {
+				return fmt.Errorf("empty allowed_request_fields route on token %q", tok.ID)
+			}
+			if len(fields) == 0 {
+				return fmt.Errorf("empty allowed_request_fields for route %q on token %q", routeName, tok.ID)
+			}
+			for _, field := range fields {
+				if strings.TrimSpace(field) == "" {
+					return fmt.Errorf("empty allowed request field for route %q on token %q", routeName, tok.ID)
+				}
+			}
+		}
 		for _, cred := range tok.Credentials {
 			if cred.ID == "" || cred.HMACSHA256 == "" {
 				return fmt.Errorf("credential id and hmac_sha256 are required on token %q", tok.ID)
@@ -397,7 +433,7 @@ func (c *Config) FindToken(id string) *TokenPolicy {
 
 func KnownScope(scope string) bool {
 	switch scope {
-	case "users:read", "users:create", "users:update", "users:action", "user:read", "user:write", "user:action", "hwid:read", "hwid:write", "squads:read", "squad:read", "system:read", "metadata:read", "subscriptions:read", "subscription:read", "remnawave:*", "privileged:*":
+	case "users:read", "users:create", "users:update", "users:action", "user:read", "user:write", "user:action", "hwid:read", "hwid:write", "squads:read", "squad:read", "system:read", "metadata:read", "subscriptions:read", "subscription:read", "subscription-pages:read", "subscription-pages:write", "remnawave:*", "privileged:*":
 		return true
 	default:
 		return false

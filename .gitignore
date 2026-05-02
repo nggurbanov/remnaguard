@@ -11,3 +11,4 @@ remnaguard.yaml
 .local/
 PLAN.md
 REFACTORING_PLAN.md
+PRIVATE_*.md

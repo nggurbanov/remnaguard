@@ -1,28 +1,18 @@
+# Intended client: bot that creates and updates users in one tenant namespace.
+# Expected allowed routes: POST/PATCH /api/users, selected user action routes, HWID writes.
+# Expected denied routes: bulk user routes, squads, nodes, hosts, token/admin routes.
+# Tradeoff: restricted writes require write_safety.single_writer and post-write verification.
 tokens:
-  - id: internal-backend
-    scopes:
-      - remnawave:*
-    credentials:
-      - id: internal-backend-credential
-        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
-
-  - id: analytics-readonly
-    scopes:
-      - users:read
-      - system:read
-      - metadata:read
-    credentials:
-      - id: analytics-credential
-        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
-
-  - id: bot-users-only
+  - id: user-lifecycle-bot
     scopes:
       - users:read
       - users:create
       - users:update
-      - subscriptions:read
+      - users:action
+      - hwid:read
+      - hwid:write
     constraints:
-      username_prefix: "bot_"
+      username_prefix: "tenant-a-"
       email_domains:
         - "example.com"
       allowed_internal_squads:
@@ -38,26 +28,22 @@ tokens:
         user.create:
           - username
           - email
+          - telegramId
           - description
           - trafficLimitBytes
+          - trafficLimitStrategy
           - activeInternalSquads
           - externalSquadUuid
+          - subscriptionPageConfigUuid
         user.update:
           - uuid
           - email
           - description
           - trafficLimitBytes
+          - trafficLimitStrategy
+          - activeInternalSquads
+          - externalSquadUuid
+          - subscriptionPageConfigUuid
     credentials:
-      - id: bot-credential
-        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
-
-  - id: mcp-agent-support
-    scopes:
-      - users:read
-      - metadata:read
-    constraints:
-      username_prefix: "support_"
-      max_description_length: 256
-    credentials:
-      - id: support-credential
+      - id: user-lifecycle-bot-credential
         hmac_sha256: "replace-with-remnaguard-token-generate-digest"

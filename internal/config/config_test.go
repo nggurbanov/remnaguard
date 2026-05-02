@@ -88,3 +88,30 @@ func TestValidateRejectsUnsetPublicSubscriptionAuthEnv(t *testing.T) {
 		t.Fatal("expected missing public subscription auth env to be rejected")
 	}
 }
+
+func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	for _, tc := range []struct {
+		name string
+		edit func(*TokenPolicy)
+	}{
+		{name: "bad username regex", edit: func(tok *TokenPolicy) { tok.Constraints.UsernameRegex = "[" }},
+		{name: "bad telegram range", edit: func(tok *TokenPolicy) { tok.Constraints.TelegramIDRanges = []IDRange{{Min: 10, Max: 1}} }},
+		{name: "empty request fields", edit: func(tok *TokenPolicy) { tok.Constraints.AllowedRequestFields = map[string][]string{"user.create": {}} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Defaults()
+			cfg.Upstream.BaseURL = "https://example.test"
+			cfg.Upstream.Bearer = "root"
+			cfg.Tokens = []TokenPolicy{{
+				ID:          "tenant-a",
+				Scopes:      []string{"users:read"},
+				Credentials: []Credential{{ID: "cred", HMACSHA256: "digest"}},
+			}}
+			tc.edit(&cfg.Tokens[0])
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected invalid extended constraint to be rejected")
+			}
+		})
+	}
+}

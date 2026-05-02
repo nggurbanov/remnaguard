@@ -9,13 +9,13 @@ import (
 )
 
 func TestPrivilegedRequiresPrivilegedScope(t *testing.T) {
-	route, ok := routes.Match(routes.Catalog("2.7.4"), http.MethodGet, "/api/users")
+	route, ok := routes.Match(routes.Catalog("2.7.4"), http.MethodGet, "/api/nodes")
 	if !ok {
 		t.Fatal("route not found")
 	}
 	tok := &config.TokenPolicy{ID: "restricted", Scopes: []string{"users:read"}}
 	if Decide(tok, route).Allow {
-		t.Fatal("restricted read scope must not allow privileged list route")
+		t.Fatal("restricted read scope must not allow privileged infra route")
 	}
 	tok.Scopes = append(tok.Scopes, "remnawave:*")
 	if !Decide(tok, route).Allow {

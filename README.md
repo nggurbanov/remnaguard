@@ -16,7 +16,7 @@ RemnaGuard ставится между клиентами и Remnawave API. Priv
 - команды token add, rotate, disable и prune с atomic YAML writes, backups и validation rollback;
 - support levels: `privileged`, `policy-enforced`, `unsupported`, `public-subscription`;
 - explicit query allowlists, JSON content enforcement, duplicate-key rejection, body field allowlists и configured value limits;
-- response-side user ownership checks и HWID user preflight checks;
+- response-side user ownership checks, filtered user/squad list responses и HWID user preflight checks;
 - restricted write/action support только за `write_safety.enable_restricted_writes` плюс `single_writer`, с per-resource in-memory locks и post-write verification;
 - isolated public subscription forwarding, выключен по умолчанию, с request/response header allowlists и per-IP limits;
 - upstream auth replacement и stripping для hop-by-hop, forwarded и protected headers;
@@ -48,6 +48,8 @@ remnaguard serve -c remnaguard.yaml
 ```
 
 Token policies удобно хранить в `tokens.d/*.yaml`. Raw token печатается один раз командой `token generate`; в config храните только HMAC digest.
+
+Generic policy recipes лежат в `examples/policies/`. Для приватных deployments используйте те же primitives, но храните реальные UUID, tenant names и domains вне публичного репозитория.
 
 ## Совместимость
 
@@ -126,7 +128,7 @@ This repository contains the v1 service baseline:
 - token add, rotate, disable, and prune commands with atomic YAML writes, backups, and validation rollback;
 - `privileged`, `policy-enforced`, `unsupported`, and `public-subscription` route support levels;
 - explicit query allowlists, JSON content enforcement, duplicate-key rejection, body field allowlists, and configured value limits;
-- response-side user ownership checks and HWID user preflight checks;
+- response-side user ownership checks, filtered user/squad list responses, and HWID user preflight checks;
 - restricted write/action support behind explicit `write_safety.enable_restricted_writes` plus `single_writer` gates, with per-resource in-memory locks and post-write verification;
 - isolated public subscription forwarding, disabled by default, with request/response header allowlists and per-IP limits;
 - upstream auth replacement and hop-by-hop/header stripping;
@@ -158,6 +160,8 @@ remnaguard serve -c remnaguard.yaml
 ```
 
 Store token policies under `tokens.d/*.yaml`. The raw token is printed once by `token generate`; store only the generated HMAC digest in config.
+
+Generic policy recipes live under `examples/policies/`. For private deployments, use the same primitives but keep real UUIDs, tenant names, and domains out of the public repository.
 
 ## Compatibility
 
