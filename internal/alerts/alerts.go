@@ -117,6 +117,9 @@ func (m *Manager) record(ev Event) {
 		b = &bucket{event: ev, first: now, last: now}
 		m.buckets[key] = b
 	}
+	if b.count == 0 {
+		b.first = now
+	}
 	b.event = ev
 	b.last = now
 	b.count++
@@ -124,7 +127,7 @@ func (m *Manager) record(ev Event) {
 	if b.lastSent.IsZero() || now.Sub(b.lastSent) >= cooldown {
 		send = cloneBucket(b)
 		b.count = 0
-		b.first = now
+		b.first = time.Time{}
 		b.lastSent = now
 	}
 	m.mu.Unlock()
@@ -147,7 +150,7 @@ func (m *Manager) flushDue(now time.Time) {
 		}
 		sends = append(sends, *cloneBucket(b))
 		b.count = 0
-		b.first = now
+		b.first = time.Time{}
 		b.lastSent = now
 	}
 	m.mu.Unlock()

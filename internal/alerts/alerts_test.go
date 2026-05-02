@@ -116,3 +116,62 @@ func TestTelegramAlertCooldownSuppressesDuplicateBurst(t *testing.T) {
 		t.Fatalf("expected one telegram request during cooldown, got %d", got)
 	}
 }
+
+func TestTelegramAlertStartsNewWindowAfterImmediateSend(t *testing.T) {
+	requests := make(chan string, 2)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		requests <- payload["text"]
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("ALERT_TOKEN", "test-token")
+	t.Setenv("ALERT_CHAT", "12345")
+	m := NewManager(config.AlertsConfig{
+		Enabled: true,
+		Telegram: config.TelegramAlertsConfig{
+			Enabled:     true,
+			BotTokenEnv: "ALERT_TOKEN",
+			ChatIDEnv:   "ALERT_CHAT",
+			Cooldown:    5 * time.Minute,
+			QueueSize:   10,
+			Timeout:     time.Second,
+			APIBaseURL:  ts.URL,
+		},
+	})
+	defer m.Close()
+
+	first := time.Date(2026, 5, 3, 1, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	for _, createdAt := range []time.Time{first, second} {
+		m.Notify(Event{
+			Name:      "request_denied",
+			Reason:    "unknown_route",
+			Status:    http.StatusNotFound,
+			CreatedAt: createdAt,
+		})
+	}
+
+	<-requests
+	select {
+	case text := <-requests:
+		if strings.Contains(text, "first: 2026-05-03 01:00:00 UTC") {
+			t.Fatalf("second alert reused stale first timestamp:\n%s", text)
+		}
+		for _, want := range []string{
+			"count: 1 in 0s",
+			"first: 2026-05-03 02:00:00 UTC",
+			"last: 2026-05-03 02:00:00 UTC",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("message missing %q in:\n%s", want, text)
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for second telegram request")
+	}
+}
