@@ -17,6 +17,8 @@ import (
 
 type Event struct {
 	Name      string
+	Method    string
+	Path      string
 	Route     string
 	TokenID   string
 	Reason    string
@@ -186,7 +188,7 @@ func cloneBucket(b *bucket) *bucket {
 }
 
 func alertKey(ev Event) string {
-	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
+	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Method), emptyDash(ev.Path), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
 }
 
 func (m *Manager) send(b bucket) {
@@ -249,6 +251,8 @@ func formatMessage(b bucket) string {
 	return fmt.Sprintf(
 		"%s RemnaGuard deny\n\n"+
 			"token: %s\n"+
+			"method: %s\n"+
+			"path: %s\n"+
 			"route: %s\n"+
 			"reason: %s\n"+
 			"status: %d\n\n"+
@@ -257,6 +261,8 @@ func formatMessage(b bucket) string {
 			"last: %s UTC",
 		icon,
 		emptyDash(b.event.TokenID),
+		emptyDash(b.event.Method),
+		emptyDash(b.event.Path),
 		emptyDash(b.event.Route),
 		emptyDash(b.event.Reason),
 		b.event.Status,

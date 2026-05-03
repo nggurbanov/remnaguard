@@ -181,21 +181,21 @@ func (r *Runtime) apiHandler() http.Handler {
 		defer st.limits.global.Release()
 		path, rawQuery, err := rghttp.ValidateRawRequest(req, cfg.Limits.MaxPathLength, cfg.Limits.MaxQueryLength)
 		if err != nil {
-			r.deny(w, "", "", "", err.Error(), http.StatusBadRequest)
+			r.deny(w, req, "", "", "", err.Error(), http.StatusBadRequest)
 			return
 		}
 		route, ok := routes.Match(routes.Catalog(cfg.Compatibility.EffectiveVersion()), req.Method, path)
 		if !ok {
-			r.deny(w, "", "", "", "unknown_route", http.StatusNotFound)
+			r.deny(w, req, "", "", "", "unknown_route", http.StatusNotFound)
 			return
 		}
 		route = effectiveRoute(cfg, route)
 		if !st.versionOK.Load() {
-			r.deny(w, route.Name, "", "", "version_guard", http.StatusServiceUnavailable)
+			r.deny(w, req, route.Name, "", "", "version_guard", http.StatusServiceUnavailable)
 			return
 		}
 		if err := validateRouteQuery(route, rawQuery); err != nil {
-			r.deny(w, route.Name, "", "", err.Error(), http.StatusBadRequest)
+			r.deny(w, req, route.Name, "", "", err.Error(), http.StatusBadRequest)
 			return
 		}
 		if err := bufferRequestBody(req, cfg.Limits.MaxBodyBytes); err != nil {
@@ -203,7 +203,7 @@ func (r *Runtime) apiHandler() http.Handler {
 			if errors.Is(err, errBodyTooLarge) {
 				status = http.StatusRequestEntityTooLarge
 			}
-			r.deny(w, route.Name, "", "", err.Error(), status)
+			r.deny(w, req, route.Name, "", "", err.Error(), status)
 			return
 		}
 		if route.Support == routes.PublicSubscription && cfg.PublicSubs.Enabled {
@@ -212,7 +212,7 @@ func (r *Runtime) apiHandler() http.Handler {
 		}
 		if route.Support == routes.PublicSubscription {
 			if req.Header.Get("Authorization") == "" {
-				r.deny(w, route.Name, "", "", "public_subscriptions_disabled", http.StatusForbidden)
+				r.deny(w, req, route.Name, "", "", "public_subscriptions_disabled", http.StatusForbidden)
 				return
 			}
 			route.Support = routes.PolicyEnforced
@@ -220,32 +220,32 @@ func (r *Runtime) apiHandler() http.Handler {
 		}
 		parsed, err := auth.ParseBearer(req.Header.Get("Authorization"))
 		if err != nil {
-			r.deny(w, route.Name, "", "", "auth_required", http.StatusUnauthorized)
+			r.deny(w, req, route.Name, "", "", "auth_required", http.StatusUnauthorized)
 			return
 		}
 		tok, cred := cfg.FindCredential(parsed.CredentialID)
 		if tok == nil || cred == nil || !auth.Verify(parsed.Secret, []byte(os.Getenv("REMNAGUARD_TOKEN_PEPPER")), *cred) {
-			r.deny(w, route.Name, "", parsed.CredentialID, "invalid_token", http.StatusUnauthorized)
+			r.deny(w, req, route.Name, "", parsed.CredentialID, "invalid_token", http.StatusUnauthorized)
 			return
 		}
 		sem := st.limits.perToken.Get(tok.ID)
 		if !sem.Acquire() {
-			r.deny(w, route.Name, tok.ID, cred.ID, "token_concurrency", http.StatusTooManyRequests)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, "token_concurrency", http.StatusTooManyRequests)
 			return
 		}
 		defer sem.Release()
 		if !st.limits.tokenRate.Allow(tok.ID) {
-			r.deny(w, route.Name, tok.ID, cred.ID, "token_rate_limit", http.StatusTooManyRequests)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, "token_rate_limit", http.StatusTooManyRequests)
 			return
 		}
 		dec := policy.Decide(tok, route)
 		if !dec.Allow && (!cfg.Report.Enabled || !cfg.Report.UnsafeReportProxy) {
-			r.deny(w, route.Name, tok.ID, cred.ID, dec.Reason, http.StatusForbidden)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, dec.Reason, http.StatusForbidden)
 			return
 		}
 		if isRestrictedWrite(route) && route.Support == routes.PolicyEnforced {
 			if !cfg.WriteSafety.RestrictedWritesEnabled() || !cfg.WriteSafety.SingleWriter {
-				r.deny(w, route.Name, tok.ID, cred.ID, "write_safety_not_enabled", http.StatusForbidden)
+				r.deny(w, req, route.Name, tok.ID, cred.ID, "write_safety_not_enabled", http.StatusForbidden)
 				return
 			}
 			if err := cacheBody(req, cfg.Limits.MaxBodyBytes); err != nil {
@@ -253,14 +253,14 @@ func (r *Runtime) apiHandler() http.Handler {
 				if errors.Is(err, errBodyTooLarge) {
 					status = http.StatusRequestEntityTooLarge
 				}
-				r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), status)
+				r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), status)
 				return
 			}
 			unlock := r.lockResource(lockKey(route, path, req))
 			defer unlock()
 		}
 		if err := r.preflight(req, st, route, path, tok); err != nil {
-			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
 		if err := validateBodyPolicy(req, cfg, route, tok); err != nil {
@@ -268,24 +268,24 @@ func (r *Runtime) apiHandler() http.Handler {
 			if errors.Is(err, errBodyTooLarge) {
 				status = http.StatusRequestEntityTooLarge
 			}
-			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), status)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), status)
 			return
 		}
 		upstreamRes, err := st.proxy.RoundTrip(w, req, path, rawQuery, false)
 		if err != nil {
-			r.deny(w, route.Name, tok.ID, cred.ID, "upstream_unavailable", http.StatusBadGateway)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, "upstream_unavailable", http.StatusBadGateway)
 			return
 		}
 		if err := enforceResponsePolicy(route, tok, upstreamRes); err != nil {
-			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
 		if err := filterResponsePolicy(route, tok, upstreamRes); err != nil {
-			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusBadGateway)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusBadGateway)
 			return
 		}
 		if err := r.postWriteVerify(req, st, route, tok, upstreamRes); err != nil {
-			r.deny(w, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
+			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
 		st.proxy.WriteResponse(w, upstreamRes, false)
@@ -333,28 +333,28 @@ func isRestrictedWrite(route routes.Route) bool {
 func (r *Runtime) handlePublicSub(w http.ResponseWriter, req *http.Request, st *runtimeState, route routes.Route, path, rawQuery string) {
 	cfg := st.cfg
 	if !cfg.PublicSubs.Enabled {
-		r.deny(w, route.Name, "", "", "public_subscriptions_disabled", http.StatusForbidden)
+		r.deny(w, req, route.Name, "", "", "public_subscriptions_disabled", http.StatusForbidden)
 		return
 	}
 	shortRe := regexp.MustCompile(cfg.PublicSubs.ShortUUIDRegex)
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 3 || !shortRe.MatchString(parts[2]) {
-		r.deny(w, route.Name, "", "", "invalid_short_uuid", http.StatusBadRequest)
+		r.deny(w, req, route.Name, "", "", "invalid_short_uuid", http.StatusBadRequest)
 		return
 	}
 	if len(parts) == 4 && parts[3] != "info" && !contains(cfg.PublicSubs.AllowedClients, parts[3]) {
-		r.deny(w, route.Name, "", "", "client_type_denied", http.StatusForbidden)
+		r.deny(w, req, route.Name, "", "", "client_type_denied", http.StatusForbidden)
 		return
 	}
 	ip := clientIP(req)
 	sem := st.limits.perSubIP.Get(ip)
 	if !sem.Acquire() {
-		r.deny(w, route.Name, "", "", "public_subscription_concurrency", http.StatusTooManyRequests)
+		r.deny(w, req, route.Name, "", "", "public_subscription_concurrency", http.StatusTooManyRequests)
 		return
 	}
 	defer sem.Release()
 	if !st.limits.subRate.Allow(ip) {
-		r.deny(w, route.Name, "", "", "public_subscription_rate_limit", http.StatusTooManyRequests)
+		r.deny(w, req, route.Name, "", "", "public_subscription_rate_limit", http.StatusTooManyRequests)
 		return
 	}
 	st.proxy.ServeHTTP(w, req, path, rawQuery, true)
@@ -1014,10 +1014,13 @@ func (r *Runtime) localHandler() http.Handler {
 	return mux
 }
 
-func (r *Runtime) deny(w http.ResponseWriter, route, tokenID, credentialID, reason string, status int) {
-	r.audit.Emit("request_denied", route, tokenID, credentialID, reason, status)
+func (r *Runtime) deny(w http.ResponseWriter, req *http.Request, route, tokenID, credentialID, reason string, status int) {
+	method, path := safeRequestContext(req)
+	r.audit.EmitRequest("request_denied", route, tokenID, credentialID, reason, method, path, status)
 	r.alerts.Notify(alerts.Event{
 		Name:      "request_denied",
+		Method:    method,
+		Path:      path,
 		Route:     route,
 		TokenID:   tokenID,
 		Reason:    reason,
@@ -1025,6 +1028,22 @@ func (r *Runtime) deny(w http.ResponseWriter, route, tokenID, credentialID, reas
 		CreatedAt: time.Now().UTC(),
 	})
 	http.Error(w, fmt.Sprintf("denied: %s", reason), status)
+}
+
+func safeRequestContext(req *http.Request) (string, string) {
+	if req == nil {
+		return "", ""
+	}
+	method := req.Method
+	path := req.URL.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	const maxAlertPath = 256
+	if len(path) > maxAlertPath {
+		path = path[:maxAlertPath] + "..."
+	}
+	return method, path
 }
 
 func contains(xs []string, want string) bool {

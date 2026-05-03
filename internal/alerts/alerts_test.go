@@ -45,6 +45,8 @@ func TestTelegramAlertSendsDeniedRequestMessage(t *testing.T) {
 
 	m.Notify(Event{
 		Name:      "request_denied",
+		Method:    http.MethodGet,
+		Path:      "/api/users/by-telegram-id/1000000000000001",
 		Route:     "user.read.telegram",
 		TokenID:   "batconnect-core",
 		Reason:    "telegram_id_denied",
@@ -61,6 +63,8 @@ func TestTelegramAlertSendsDeniedRequestMessage(t *testing.T) {
 		for _, want := range []string{
 			"RemnaGuard deny",
 			"token: batconnect-core",
+			"method: GET",
+			"path: /api/users/by-telegram-id/1000000000000001",
 			"route: user.read.telegram",
 			"reason: telegram_id_denied",
 			"status: 403",

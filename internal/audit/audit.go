@@ -49,8 +49,16 @@ func New(stdout bool, pepper []byte, sqlitePath string) (*Logger, error) {
 }
 
 func (l *Logger) Emit(event, route, tokenID, credentialID, reason string, status int) {
+	l.emit(event, route, tokenID, credentialID, reason, "", "", status)
+}
+
+func (l *Logger) EmitRequest(event, route, tokenID, credentialID, reason, method, path string, status int) {
+	l.emit(event, route, tokenID, credentialID, reason, method, path, status)
+}
+
+func (l *Logger) emit(event, route, tokenID, credentialID, reason, method, path string, status int) {
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
-	_ = json.NewEncoder(l.out).Encode(map[string]any{
+	payload := map[string]any{
 		"ts":            ts,
 		"event":         event,
 		"route":         route,
@@ -58,7 +66,14 @@ func (l *Logger) Emit(event, route, tokenID, credentialID, reason string, status
 		"credential_id": credentialID,
 		"reason":        reason,
 		"status":        status,
-	})
+	}
+	if method != "" {
+		payload["method"] = method
+	}
+	if path != "" {
+		payload["path"] = path
+	}
+	_ = json.NewEncoder(l.out).Encode(payload)
 	if l.db != nil {
 		_, _ = l.db.Exec(`insert into audit_events (ts,event,route,token_id,credential_id,reason,status) values (?,?,?,?,?,?,?)`, ts, event, route, tokenID, credentialID, reason, status)
 	}
