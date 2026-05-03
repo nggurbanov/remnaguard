@@ -1076,7 +1076,11 @@ func validateUserConstraints(obj map[string]json.RawMessage, tok *config.TokenPo
 			}
 		}
 	}
-	if raw, ok := obj["telegramId"]; ok {
+	for _, field := range []string{"telegramId", "telegram_id"} {
+		raw, ok := obj[field]
+		if !ok {
+			continue
+		}
 		var id *int64
 		if err := json.Unmarshal(raw, &id); err != nil {
 			return fmt.Errorf("invalid_telegram_id")
@@ -1167,13 +1171,19 @@ func validateSquadBodyFields(obj map[string]json.RawMessage, c config.Constraint
 			}
 		}
 	}
-	if raw, ok := obj["externalSquadUuid"]; ok && len(c.AllowedExternalSquads) > 0 {
-		var id *string
-		if err := json.Unmarshal(raw, &id); err != nil {
-			return fmt.Errorf("invalid_external_squad")
-		}
-		if id != nil && *id != "" && !contains(c.AllowedExternalSquads, *id) {
-			return fmt.Errorf("external_squad_denied")
+	if len(c.AllowedExternalSquads) > 0 {
+		for _, field := range []string{"externalSquadUuid", "external_squad_uuid"} {
+			raw, ok := obj[field]
+			if !ok {
+				continue
+			}
+			var id *string
+			if err := json.Unmarshal(raw, &id); err != nil {
+				return fmt.Errorf("invalid_external_squad")
+			}
+			if id != nil && *id != "" && !contains(c.AllowedExternalSquads, *id) {
+				return fmt.Errorf("external_squad_denied")
+			}
 		}
 	}
 	return nil
