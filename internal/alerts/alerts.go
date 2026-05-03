@@ -188,7 +188,7 @@ func cloneBucket(b *bucket) *bucket {
 }
 
 func alertKey(ev Event) string {
-	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Method), emptyDash(ev.Path), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
+	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
 }
 
 func (m *Manager) send(b bucket) {

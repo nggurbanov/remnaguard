@@ -179,3 +179,48 @@ func TestTelegramAlertStartsNewWindowAfterImmediateSend(t *testing.T) {
 		t.Fatal("timed out waiting for second telegram request")
 	}
 }
+
+func TestTelegramAlertAggregatesDifferentPathsForSameDenial(t *testing.T) {
+	var count atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count.Add(1)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("ALERT_TOKEN", "test-token")
+	t.Setenv("ALERT_CHAT", "12345")
+	m := NewManager(config.AlertsConfig{
+		Enabled: true,
+		Telegram: config.TelegramAlertsConfig{
+			Enabled:     true,
+			BotTokenEnv: "ALERT_TOKEN",
+			ChatIDEnv:   "ALERT_CHAT",
+			Cooldown:    time.Hour,
+			QueueSize:   10,
+			Timeout:     time.Second,
+			APIBaseURL:  ts.URL,
+		},
+	})
+	defer m.Close()
+
+	now := time.Date(2026, 5, 3, 12, 45, 0, 0, time.UTC)
+	for i, path := range []string{
+		"/api/sub/phpinfo.php/info",
+		"/api/sub/server-status.php/info",
+		"/api/sub/phpinfo.php.bak/info",
+	} {
+		m.Notify(Event{
+			Name:      "request_denied",
+			Method:    http.MethodGet,
+			Path:      path,
+			Reason:    "unknown_route",
+			Status:    http.StatusNotFound,
+			CreatedAt: now.Add(time.Duration(i) * time.Second),
+		})
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := count.Load(); got != 1 {
+		t.Fatalf("expected scanner-like paths to aggregate into one telegram request, got %d", got)
+	}
+}
