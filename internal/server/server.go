@@ -300,6 +300,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), status)
 			return
 		}
+		if panelAuditContextFromRequest(req) != nil {
+			stripConditionalRequestHeaders(req)
+		}
 		upstreamRes, err := st.proxy.RoundTrip(w, req, path, rawQuery, false)
 		if err != nil {
 			setPanelAuditAuthEventType(req, "upstream")
@@ -317,6 +320,9 @@ func (r *Runtime) apiHandler() http.Handler {
 		if err := r.postWriteVerify(req, st, route, tok, upstreamRes); err != nil {
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
+		}
+		if panelAuditContextFromRequest(req) != nil {
+			disablePanelCacheHeaders(upstreamRes.Header)
 		}
 		st.proxy.WriteResponse(w, upstreamRes, false)
 		r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", upstreamRes.StatusCode))
@@ -923,6 +929,7 @@ func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request
 	if panelAuditContextFromRequest(req) == nil || req.Method != http.MethodGet {
 		return false
 	}
+	disablePanelCacheHeaders(w.Header())
 	switch path {
 	case "/api/remnawave-settings":
 		writeJSON(w, http.StatusOK, panelRemnawaveSettingsResponse(cfg))
@@ -932,9 +939,27 @@ func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusOK, panelAPITokensResponse())
 		r.audit.EmitRequestFields("panel_facade_read", route.Name, tok.ID, cred.ID, "ok", req.Method, path, http.StatusOK, panelAuditFields(req, "settings", 0))
 		return true
+	case "/api/passkeys":
+		writeJSON(w, http.StatusOK, panelPasskeysResponse())
+		r.audit.EmitRequestFields("panel_facade_read", route.Name, tok.ID, cred.ID, "ok", req.Method, path, http.StatusOK, panelAuditFields(req, "settings", 0))
+		return true
 	default:
 		return false
 	}
+}
+
+func stripConditionalRequestHeaders(req *http.Request) {
+	req.Header.Del("If-None-Match")
+	req.Header.Del("If-Modified-Since")
+	req.Header.Del("If-Range")
+}
+
+func disablePanelCacheHeaders(h http.Header) {
+	h.Del("Etag")
+	h.Del("Last-Modified")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Pragma", "no-cache")
+	h.Set("Expires", "0")
 }
 
 func panelRemnawaveSettingsResponse(cfg *config.Config) map[string]any {
@@ -955,6 +980,10 @@ func panelRemnawaveSettingsResponse(cfg *config.Config) map[string]any {
 
 func panelAPITokensResponse() map[string]any {
 	return map[string]any{"response": map[string]any{"apiKeys": []any{}, "docs": map[string]any{"isDocsEnabled": false, "scalarPath": nil, "swaggerPath": nil}}}
+}
+
+func panelPasskeysResponse() map[string]any {
+	return map[string]any{"response": map[string]any{"passkeys": []any{}}}
 }
 
 func panelTelegramActorIDs(cfg *config.Config) []string {

@@ -1146,6 +1146,7 @@ func TestPanelSessionFacadesAdminJWTOnlySettingsReads(t *testing.T) {
 	}{
 		{path: "/api/remnawave-settings", want: "RemnaGuard Restricted Panel"},
 		{path: "/api/tokens", want: "isDocsEnabled"},
+		{path: "/api/passkeys", want: "passkeys"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		req.RequestURI = tc.path
@@ -1172,7 +1173,7 @@ func TestPanelSessionFacadeReadsAcceptTrailingSlash(t *testing.T) {
 	rt.state.Load().cfg.Tokens[0].Scopes = []string{"remnawave:*"}
 	panelToken := issueTestPanelSession(t, rt)
 
-	for _, path := range []string{"/api/remnawave-settings/", "/api/tokens/"} {
+	for _, path := range []string{"/api/remnawave-settings/", "/api/tokens/", "/api/passkeys/"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.RequestURI = path
 		req.Header.Set("Authorization", "Bearer "+panelToken)
@@ -1206,6 +1207,37 @@ func TestPanelSessionProxiesTrailingSlashAsCanonicalPath(t *testing.T) {
 	}
 	if upstreamPath != "/api/internal-squads" {
 		t.Fatalf("upstream path = %q, want canonical path", upstreamPath)
+	}
+}
+
+func TestPanelSessionStripsConditionalCacheHeaders(t *testing.T) {
+	var gotIfNoneMatch string
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, req *http.Request) {
+		gotIfNoneMatch = req.Header.Get("If-None-Match")
+		w.Header().Set("Etag", `"cached"`)
+		w.Header().Set("Last-Modified", "Mon, 01 Jan 2024 00:00:00 GMT")
+		_, _ = w.Write([]byte(`{"response":[]}`))
+	})
+	rt.state.Load().cfg.Tokens[0].Scopes = []string{"squads:read"}
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads/", nil)
+	req.RequestURI = "/api/internal-squads/"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	req.Header.Set("If-None-Match", `"cached"`)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected cached panel request to proxy as fresh, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if gotIfNoneMatch != "" {
+		t.Fatalf("upstream saw If-None-Match %q", gotIfNoneMatch)
+	}
+	if rec.Header().Get("Etag") != "" || rec.Header().Get("Last-Modified") != "" {
+		t.Fatalf("cache validators leaked to panel response: %v", rec.Header())
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
 	}
 }
 
