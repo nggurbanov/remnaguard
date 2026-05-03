@@ -221,7 +221,7 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, req, route.Name, "", "", "version_guard", http.StatusServiceUnavailable)
 			return
 		}
-		if err := validateRouteQuery(route, rawQuery); err != nil {
+		if err := validateRequestQuery(req, route, rawQuery); err != nil {
 			r.deny(w, req, route.Name, "", "", err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -903,6 +903,13 @@ func validateRouteQuery(route routes.Route, rawQuery string) error {
 		return rghttp.ValidateQueryStructural(rawQuery)
 	}
 	return rghttp.ValidateQuery(rawQuery, route.QueryAllowed)
+}
+
+func validateRequestQuery(req *http.Request, route routes.Route, rawQuery string) error {
+	if panelAuditContextFromRequest(req) != nil {
+		return rghttp.ValidateQueryStructural(rawQuery)
+	}
+	return validateRouteQuery(route, rawQuery)
 }
 
 func effectiveRoute(cfg *config.Config, route routes.Route) routes.Route {

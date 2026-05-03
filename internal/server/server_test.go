@@ -1107,6 +1107,31 @@ func TestPanelSessionAllowedRouteUsesExistingProxyPipeline(t *testing.T) {
 	}
 }
 
+func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.URL.RequestURI() != "/api/users?start=0&size=25&filters=%5B%5D&filterModes=%7B%22username%22%3A%22contains%22%7D&sorting=%5B%5D" {
+			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"users":[]}}`))
+	})
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users?start=0&size=25&filters=%5B%5D&filterModes=%7B%22username%22%3A%22contains%22%7D&sorting=%5B%5D", nil)
+	req.RequestURI = "/api/users?start=0&size=25&filters=%5B%5D&filterModes=%7B%22username%22%3A%22contains%22%7D&sorting=%5B%5D"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected panel session table query to proxy, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+}
+
 func TestPanelSessionMissingRequiredScopeDoesNotCallUpstream(t *testing.T) {
 	upstreamCalls := 0
 	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
