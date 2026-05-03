@@ -1,5 +1,5 @@
 {
   "response": {
-    "authorizationUrl": "https://restricted.example.com/api/auth/oauth2/callback?provider=telegram&state=telegram-oauth-state"
+    "authorizationUrl": "https://oauth.telegram.org/auth?client_id=telegram-client-id&code_challenge=test-code-challenge&code_challenge_method=S256&nonce=test-random-oauth-nonce&redirect_uri=https%3A%2F%2Frestricted.example.com%2Foauth2%2Fcallback%2Ftelegram&response_type=code&scope=openid+profile+telegram%3Abot_access&state=test-random-oauth-state"
   }
 }

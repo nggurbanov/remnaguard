@@ -186,7 +186,7 @@ func TestValidateAcceptsDisabledPanelFacadeWithoutPanelEnv(t *testing.T) {
 	cfg.Upstream.BaseURL = "https://example.test"
 	cfg.Upstream.Bearer = "root"
 	cfg.PanelFacade.Session.SecretEnv = "MISSING_PANEL_SESSION_SECRET"
-	cfg.PanelFacade.Telegram.BotTokenEnv = "MISSING_PANEL_TELEGRAM_TOKEN"
+	cfg.PanelFacade.Telegram.ClientIDEnv = "MISSING_PANEL_TELEGRAM_CLIENT_ID"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected disabled panel facade to ignore panel env vars: %v", err)
 	}
@@ -207,11 +207,11 @@ func TestValidateRejectsPanelFacadeMissingSessionSecretEnv(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsPanelFacadeMissingTelegramBotTokenEnv(t *testing.T) {
+func TestValidateRejectsPanelFacadeMissingTelegramClientEnv(t *testing.T) {
 	cfg := validPanelFacadeConfig(t)
-	cfg.PanelFacade.Telegram.BotTokenEnv = "MISSING_PANEL_TELEGRAM_TOKEN"
+	cfg.PanelFacade.Telegram.ClientIDEnv = "MISSING_PANEL_TELEGRAM_CLIENT_ID"
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected missing panel telegram bot token env to be rejected")
+		t.Fatal("expected missing panel telegram client env to be rejected")
 	}
 }
 
@@ -228,6 +228,30 @@ func TestValidateRejectsPanelFacadeMissingCredential(t *testing.T) {
 	cfg.PanelFacade.Actors.Telegram["123456789"] = PanelFacadeTelegramActor{CredentialID: "missing-cred", DisplayName: "Alice"}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected missing panel actor credential to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadePrivateHTTPTokenURL(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Telegram.TokenURL = "http://10.0.0.10/token"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected private http panel telegram token url to be rejected")
+	}
+}
+
+func TestValidateAllowsPanelFacadeLoopbackHTTPTokenURL(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Telegram.TokenURL = "http://127.0.0.1/token"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected loopback http panel telegram token url to be allowed for tests/local dev: %v", err)
+	}
+}
+
+func TestValidateRejectsPanelFacadeNonHTTPLoopbackTokenURL(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Telegram.TokenURL = "ftp://localhost/token"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected non-http loopback panel telegram token url to be rejected")
 	}
 }
 
@@ -260,7 +284,8 @@ func validPanelFacadeConfig(t *testing.T) *Config {
 	t.Helper()
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	t.Setenv("PANEL_SESSION_SECRET", "session-secret")
-	t.Setenv("PANEL_TELEGRAM_TOKEN", "telegram-token")
+	t.Setenv("PANEL_TELEGRAM_CLIENT_ID", "telegram-client-id")
+	t.Setenv("PANEL_TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	cfg := Defaults()
 	cfg.Upstream.BaseURL = "https://example.test"
 	cfg.Upstream.Bearer = "root"
@@ -278,8 +303,12 @@ func validPanelFacadeConfig(t *testing.T) *Config {
 			SecretEnv: "PANEL_SESSION_SECRET",
 		},
 		Telegram: PanelFacadeTelegramConfig{
-			BotTokenEnv: "PANEL_TELEGRAM_TOKEN",
-			AuthMaxAge:  5 * time.Minute,
+			ClientIDEnv:     "PANEL_TELEGRAM_CLIENT_ID",
+			ClientSecretEnv: "PANEL_TELEGRAM_CLIENT_SECRET",
+			FrontendDomain:  "restricted.example.com",
+			AuthURL:         "https://oauth.telegram.org/auth",
+			TokenURL:        "https://oauth.telegram.org/token",
+			AuthMaxAge:      5 * time.Minute,
 		},
 		Actors: PanelFacadeActorsConfig{Telegram: map[string]PanelFacadeTelegramActor{
 			"123456789": {CredentialID: "panel-cred", DisplayName: "Alice"},

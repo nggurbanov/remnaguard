@@ -52,7 +52,9 @@ func TestRemnawaveAuthCompatibilityStatusFixture(t *testing.T) {
 	branding := decodeObject(t, response["branding"])
 	assertExactKeys(t, branding, "title", "logoUrl")
 	assertString(t, branding["title"], "RemnaGuard Restricted Panel")
-	assertString(t, branding["logoUrl"], "https://restricted.example.com/assets/logo.svg")
+	if string(branding["logoUrl"]) != "null" {
+		t.Fatalf("logoUrl should be null, got %s", string(branding["logoUrl"]))
+	}
 }
 
 func TestRemnawaveAuthCompatibilityOAuth2Fixtures(t *testing.T) {
@@ -65,25 +67,34 @@ func TestRemnawaveAuthCompatibilityOAuth2Fixtures(t *testing.T) {
 	authorizePayload := decodeObject(t, authorizeResponse["response"])
 	assertExactKeys(t, authorizePayload, "authorizationUrl")
 	authorizationURL := decodeString(t, authorizePayload["authorizationUrl"])
-	if !strings.HasPrefix(authorizationURL, "https://restricted.example.com/api/auth/oauth2/callback?") {
-		t.Fatalf("authorizationUrl should target the restricted panel callback, got %q", authorizationURL)
+	if !strings.HasPrefix(authorizationURL, "https://oauth.telegram.org/auth?") {
+		t.Fatalf("authorizationUrl should target Telegram OAuth, got %q", authorizationURL)
 	}
 	parsedAuthorizeURL, err := url.Parse(authorizationURL)
 	if err != nil {
 		t.Fatalf("parse authorizationUrl: %v", err)
 	}
-	if got := parsedAuthorizeURL.Query().Get("provider"); got != "telegram" {
-		t.Fatalf("authorizationUrl provider got %q want telegram", got)
+	if got := parsedAuthorizeURL.Query().Get("response_type"); got != "code" {
+		t.Fatalf("authorizationUrl response_type got %q want code", got)
 	}
-	if got := parsedAuthorizeURL.Query().Get("state"); got != "telegram-oauth-state" {
-		t.Fatalf("authorizationUrl state got %q want telegram-oauth-state", got)
+	if got := parsedAuthorizeURL.Query().Get("redirect_uri"); got != "https://restricted.example.com/oauth2/callback/telegram" {
+		t.Fatalf("authorizationUrl redirect_uri got %q", got)
+	}
+	if got := parsedAuthorizeURL.Query().Get("code_challenge_method"); got != "S256" {
+		t.Fatalf("authorizationUrl code_challenge_method got %q want S256", got)
+	}
+	if nonce := parsedAuthorizeURL.Query().Get("nonce"); nonce == "" {
+		t.Fatal("authorizationUrl nonce is required")
+	}
+	if state := parsedAuthorizeURL.Query().Get("state"); state == "" || state == "telegram-oauth-state" {
+		t.Fatalf("authorizationUrl state is unsafe: %q", state)
 	}
 
 	callbackRequest := readFixtureObject(t, "oauth2_callback_telegram.request.json")
 	assertExactKeys(t, callbackRequest, "provider", "code", "state")
 	assertString(t, callbackRequest["provider"], "telegram")
 	assertString(t, callbackRequest["code"], "telegram-oauth-code")
-	assertString(t, callbackRequest["state"], "telegram-oauth-state")
+	assertString(t, callbackRequest["state"], "test-random-oauth-state")
 
 	callbackResponse := readFixtureObject(t, "oauth2_callback_telegram.response.json")
 	assertExactKeys(t, callbackResponse, "response")

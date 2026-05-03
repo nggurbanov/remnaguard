@@ -3,12 +3,17 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/hmac"
+	cryptorand "crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -808,7 +813,7 @@ func TestPanelAuthFacadeStatusAndAuthorizeDoNotProxy(t *testing.T) {
 	if authorizeRec.Code != http.StatusOK {
 		t.Fatalf("authorize got %d: %s", authorizeRec.Code, authorizeRec.Body.String())
 	}
-	assertJSONMatchesFixture(t, authorizeRec.Body.Bytes(), "oauth2_authorize_telegram.response.json")
+	assertTelegramAuthorizeResponse(t, authorizeRec.Body.Bytes())
 	if *upstreamCalls != 0 {
 		t.Fatalf("panel auth facade status/authorize reached upstream %d time(s)", *upstreamCalls)
 	}
@@ -856,10 +861,11 @@ func TestPanelAuthFacadeTelegramCallbackIssuesPanelSession(t *testing.T) {
 	rt := newPanelFacadeRuntime(t)
 	var auditOut bytes.Buffer
 	rt.Audit().SetOutputForTest(&auditOut)
-	code := signedTelegramCode(time.Now())
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth2/callback", strings.NewReader(`{"provider":"telegram","code":`+strconvQuote(code)+`,"state":"telegram-oauth-state"}`))
+	state, cookie, nonce := authorizeTelegramAttempt(t, rt)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth2/callback", strings.NewReader(`{"provider":"telegram","code":`+strconvQuote(telegramOAuthCode("123456789", nonce))+`,"state":`+strconvQuote(state)+`}`))
 	req.RequestURI = "/api/auth/oauth2/callback"
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
 	rt.apiHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -890,7 +896,7 @@ func TestPanelAuthFacadeTelegramCallbackIssuesPanelSession(t *testing.T) {
 	if claims.TelegramActorID != "123456789" {
 		t.Fatalf("callback returned token for actor %q", claims.TelegramActorID)
 	}
-	for _, secret := range []string{"root", "secret", "panel-session-secret", telegramTestBotToken} {
+	for _, secret := range []string{"root", "secret", "panel-session-secret", "telegram-client-secret"} {
 		if strings.Contains(body.Response.AccessToken, secret) {
 			t.Fatalf("panel token exposes secret material %q in %q", secret, body.Response.AccessToken)
 		}
@@ -928,40 +934,37 @@ func TestPanelAuthFacadeAuthorizeURLBrowserHandoffReachesCallbackContract(t *tes
 	if err != nil {
 		t.Fatalf("parse authorizationUrl: %v", err)
 	}
+	if returnedURL.Scheme != "https" || returnedURL.Host != "oauth.telegram.org" || returnedURL.Path != "/auth" {
+		t.Fatalf("authorize returned non-Telegram OAuth URL %q", returnedURL.String())
+	}
 	query := returnedURL.Query()
-	payload, err := url.ParseQuery(signedTelegramCode(time.Now()))
-	if err != nil {
-		t.Fatal(err)
+	state := query.Get("state")
+	if state == "" || state == "telegram-oauth-state" {
+		t.Fatalf("authorize returned unsafe state %q", state)
 	}
-	for key, values := range payload {
-		for _, value := range values {
-			query.Add(key, value)
-		}
+	if query.Get("redirect_uri") != "https://restricted.example.com/oauth2/callback/telegram" {
+		t.Fatalf("unexpected redirect_uri %q", query.Get("redirect_uri"))
 	}
-	returnedURL.RawQuery = query.Encode()
-
-	handoffReq := httptest.NewRequest(http.MethodGet, returnedURL.String(), nil)
-	handoffReq.RequestURI = returnedURL.RequestURI()
-	handoffRec := httptest.NewRecorder()
-	rt.apiHandler().ServeHTTP(handoffRec, handoffReq)
-	if handoffRec.Code != http.StatusSeeOther {
-		t.Fatalf("handoff got %d: %s", handoffRec.Code, handoffRec.Body.String())
+	if query.Get("code_challenge") == "" || query.Get("code_challenge_method") != "S256" {
+		t.Fatalf("authorize URL missing PKCE values: %q", returnedURL.RawQuery)
 	}
-	location := handoffRec.Header().Get("Location")
-	frontendCallback, err := url.Parse(location)
-	if err != nil {
-		t.Fatalf("parse handoff location %q: %v", location, err)
+	if query.Get("scope") != "openid profile telegram:bot_access" {
+		t.Fatalf("unexpected scope %q", query.Get("scope"))
 	}
-	if frontendCallback.Path != "/oauth2/callback/telegram" {
-		t.Fatalf("handoff redirected to %q", location)
-	}
-	code := frontendCallback.Query().Get("code")
-	state := frontendCallback.Query().Get("state")
-	if code == "" || state != panelOAuth2TelegramState {
-		t.Fatalf("handoff location missing callback contract values: %q", location)
+	if query.Get("nonce") == "" {
+		t.Fatal("authorize URL missing nonce")
 	}
 
-	callbackRec := postPanelCallbackWithState(t, rt, code, state)
+	cookie := panelOAuthCookieFromRecorder(t, authorizeRec)
+	attempt := panelOAuthAttemptForState(t, rt, state)
+	if query.Get("code_challenge") != pkceChallenge(attempt.CodeVerifier) {
+		t.Fatal("authorize URL PKCE challenge does not match stored verifier")
+	}
+	if query.Get("nonce") != attempt.Nonce {
+		t.Fatal("authorize URL nonce does not match stored nonce")
+	}
+	nonce := attempt.Nonce
+	callbackRec := postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode("123456789", nonce), state, cookie)
 	if callbackRec.Code != http.StatusOK {
 		t.Fatalf("callback got %d: %s", callbackRec.Code, callbackRec.Body.String())
 	}
@@ -983,14 +986,14 @@ func TestPanelAuthFacadeAuthorizeURLBrowserHandoffReachesCallbackContract(t *tes
 	if claims.TelegramActorID != "123456789" {
 		t.Fatalf("callback returned token for actor %q", claims.TelegramActorID)
 	}
-	assertNoSecretMaterial(t, authorizeRec.Body.String()+handoffRec.Body.String()+location+callbackRec.Body.String())
+	assertNoSecretMaterial(t, authorizeRec.Body.String()+callbackRec.Body.String())
 }
 
 func TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets(t *testing.T) {
 	rt := newPanelFacadeRuntime(t)
 	var auditOut bytes.Buffer
 	rt.Audit().SetOutputForTest(&auditOut)
-	code := signedTelegramCodeForActor("987654321", time.Now())
+	code := "987654321"
 	rec := postPanelCallback(t, rt, code)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("got %d want 403: %s", rec.Code, rec.Body.String())
@@ -1004,7 +1007,7 @@ func TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets(t *test
 	if strings.Contains(rec.Body.String(), "987654321") {
 		t.Fatalf("response leaked actor id: %s", rec.Body.String())
 	}
-	assertNoSecretMaterial(t, rec.Body.String()+auditOut.String(), code)
+	assertNoSecretMaterial(t, rec.Body.String()+auditOut.String())
 }
 
 func TestPanelSessionAllowedRouteUsesExistingProxyPipeline(t *testing.T) {
@@ -1081,6 +1084,51 @@ func TestPanelSessionMissingRequiredScopeDoesNotCallUpstream(t *testing.T) {
 	assertAuditValue(t, last, "path", "/api/internal-squads")
 	assertAuditValue(t, last, "reason", "missing_scope")
 	assertNoSecretMaterial(t, rec.Body.String()+auditOut.String(), panelToken)
+}
+
+func TestPanelSessionMissingRequiredScopeIgnoresUnsafeReportProxy(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	rt.state.Load().cfg.Report.Enabled = true
+	rt.state.Load().cfg.Report.UnsafeReportProxy = true
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads", nil)
+	req.RequestURI = "/api/internal-squads"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected missing scope denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("unsafe report proxy let denied panel session reach upstream %d time(s)", upstreamCalls)
+	}
+}
+
+func TestRawTokenCanStillUseUnsafeReportProxy(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":[]}`))
+	})
+	rt.state.Load().cfg.Report.Enabled = true
+	rt.state.Load().cfg.Report.UnsafeReportProxy = true
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads", nil)
+	req.RequestURI = "/api/internal-squads"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected raw token unsafe report proxy to preserve legacy behavior, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected raw token unsafe report proxy to reach upstream once, got %d", upstreamCalls)
+	}
 }
 
 func TestPanelSessionExpiredTokenDoesNotCallUpstream(t *testing.T) {
@@ -1205,9 +1253,8 @@ func TestPanelAuthFacadeTelegramCallbackDenials(t *testing.T) {
 		code string
 		want int
 	}{
-		{name: "invalid hash", code: signedTelegramCode(time.Now()) + "00", want: http.StatusUnauthorized},
-		{name: "expired auth date", code: signedTelegramCode(time.Now().Add(-10 * time.Minute)), want: http.StatusUnauthorized},
-		{name: "unmapped actor", code: signedTelegramCodeForActor("987654321", time.Now()), want: http.StatusForbidden},
+		{name: "invalid code", code: "invalid-code", want: http.StatusUnauthorized},
+		{name: "unmapped actor", code: "987654321", want: http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rt := newPanelFacadeRuntime(t)
@@ -1232,7 +1279,11 @@ func TestPanelAuthFacadeCallbackRejectsMissingOrWrongState(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rt := newPanelFacadeRuntime(t)
-			rec := postPanelCallbackWithState(t, rt, signedTelegramCode(time.Now()), tc.state)
+			code := "123456789"
+			if tc.state != "" {
+				code = telegramOAuthCode("123456789", "unused-nonce")
+			}
+			rec := postPanelCallbackWithState(t, rt, code, tc.state)
 			if rec.Code != http.StatusForbidden {
 				t.Fatalf("got %d want 403: %s", rec.Code, rec.Body.String())
 			}
@@ -1243,10 +1294,71 @@ func TestPanelAuthFacadeCallbackRejectsMissingOrWrongState(t *testing.T) {
 	}
 }
 
+func TestPanelAuthFacadeRejectsOversizedPostBeforeDecode(t *testing.T) {
+	for _, path := range []string{"/api/auth/oauth2/authorize", "/api/auth/oauth2/callback"} {
+		t.Run(path, func(t *testing.T) {
+			rt := newPanelFacadeRuntime(t)
+			rt.state.Load().cfg.Limits.MaxBodyBytes = 16
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(strings.Repeat("x", 32)))
+			req.RequestURI = path
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			rt.apiHandler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("got %d want 413: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPanelAuthFacadeReloadRejectsPendingOAuthState(t *testing.T) {
+	rt := newPanelFacadeRuntime(t)
+	state, cookie, nonce := authorizeTelegramAttempt(t, rt)
+	if err := rt.Reload(rt.state.Load().cfg); err != nil {
+		t.Fatal(err)
+	}
+	rec := postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode("123456789", nonce), state, cookie)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d want 403 after reload: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPanelAuthFacadeCallbackRejectsReplayAndCookieMismatch(t *testing.T) {
+	rt := newPanelFacadeRuntime(t)
+	state, cookie, nonce := authorizeTelegramAttempt(t, rt)
+	first := postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode("123456789", nonce), state, cookie)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first callback got %d: %s", first.Code, first.Body.String())
+	}
+	replay := postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode("123456789", nonce), state, cookie)
+	if replay.Code != http.StatusForbidden {
+		t.Fatalf("replay got %d want 403: %s", replay.Code, replay.Body.String())
+	}
+
+	state, cookie, nonce = authorizeTelegramAttempt(t, rt)
+	cookie.Value = "attacker-state"
+	mismatch := postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode("123456789", nonce), state, cookie)
+	if mismatch.Code != http.StatusForbidden {
+		t.Fatalf("cookie mismatch got %d want 403: %s", mismatch.Code, mismatch.Body.String())
+	}
+}
+
+func TestPanelAuthFacadeCallbackRejectsInvalidIDTokens(t *testing.T) {
+	for _, actorID := range []string{"unsigned", "wrong-aud", "wrong-iss", "expired", "wrong-nonce"} {
+		t.Run(actorID, func(t *testing.T) {
+			rt := newPanelFacadeRuntime(t)
+			rec := postPanelCallback(t, rt, actorID)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("got %d want 401: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestPanelAuthFacadeCallbackRejectsDisabledMappedCredential(t *testing.T) {
 	rt := newPanelFacadeRuntime(t)
 	rt.state.Load().cfg.Tokens[0].Credentials[0].Disabled = true
-	rec := postPanelCallback(t, rt, signedTelegramCode(time.Now()))
+	rec := postPanelCallback(t, rt, "123456789")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("got %d want 403: %s", rec.Code, rec.Body.String())
 	}
@@ -1254,23 +1366,6 @@ func TestPanelAuthFacadeCallbackRejectsDisabledMappedCredential(t *testing.T) {
 		t.Fatalf("denial leaked mapping detail: %s", rec.Body.String())
 	}
 }
-
-func TestVerifyTelegramLoginPayloadDeterministicVector(t *testing.T) {
-	payload := "auth_date=1700000000&first_name=Alice&id=123456789&last_name=Example&photo_url=https%3A%2F%2Fexample.com%2Favatar.jpg&username=alice_example&hash=b18416b843a8b4d148c835be0bf0ec842859233027024c5ffb25c6b6b1f37b11"
-	fields, err := verifyTelegramLoginPayload(payload, telegramTestBotToken, 5*time.Minute, time.Unix(1700000000, 0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fields["id"] != "123456789" || fields["username"] != "alice_example" {
-		t.Fatalf("unexpected fields: %#v", fields)
-	}
-	duplicate := payload + "&username=mallory"
-	if _, err := verifyTelegramLoginPayload(duplicate, telegramTestBotToken, 5*time.Minute, time.Unix(1700000000, 0)); err == nil {
-		t.Fatal("expected duplicate signed field denial")
-	}
-}
-
-const telegramTestBotToken = "000000:TEST_TOKEN_DO_NOT_USE_TEST_TOKEN"
 
 func newPanelFacadeRuntime(t *testing.T) *Runtime {
 	t.Helper()
@@ -1281,20 +1376,26 @@ func newPanelFacadeRuntime(t *testing.T) *Runtime {
 func newPanelFacadeRuntimeCountingUpstream(t *testing.T) (*Runtime, *int) {
 	t.Helper()
 	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
-	t.Setenv("TELEGRAM_BOT_TOKEN", telegramTestBotToken)
+	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
+	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		upstreamCalls++
 		t.Fatal("panel auth facade request must not reach upstream")
 	}))
 	t.Cleanup(upstream.Close)
+	tokenServer := newTelegramOAuthTokenServer(t)
 	cfg := testConfig(upstream.URL, "secret")
 	cfg.PanelFacade.Enabled = true
 	cfg.PanelFacade.Session.Issuer = "remnaguard-test"
 	cfg.PanelFacade.Session.Audience = "remnawave-panel"
 	cfg.PanelFacade.Session.TokenTTL = time.Hour
 	cfg.PanelFacade.Session.SecretEnv = "PANEL_SESSION_SECRET"
-	cfg.PanelFacade.Telegram.BotTokenEnv = "TELEGRAM_BOT_TOKEN"
+	cfg.PanelFacade.Telegram.ClientIDEnv = "TELEGRAM_CLIENT_ID"
+	cfg.PanelFacade.Telegram.ClientSecretEnv = "TELEGRAM_CLIENT_SECRET"
+	cfg.PanelFacade.Telegram.FrontendDomain = "restricted.example.com"
+	cfg.PanelFacade.Telegram.AuthURL = "https://oauth.telegram.org/auth"
+	cfg.PanelFacade.Telegram.TokenURL = tokenServer.URL
 	cfg.PanelFacade.Telegram.AuthMaxAge = 5 * time.Minute
 	cfg.PanelFacade.Actors.Telegram = map[string]config.PanelFacadeTelegramActor{"123456789": {CredentialID: "cred", DisplayName: "Alice"}}
 	rt, err := NewRuntime(cfg, "test", "")
@@ -1307,16 +1408,22 @@ func newPanelFacadeRuntimeCountingUpstream(t *testing.T) (*Runtime, *int) {
 func newPanelFacadeProxyRuntime(t *testing.T, upstreamHandler http.HandlerFunc) *Runtime {
 	t.Helper()
 	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
-	t.Setenv("TELEGRAM_BOT_TOKEN", telegramTestBotToken)
+	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
+	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	upstream := httptest.NewServer(upstreamHandler)
 	t.Cleanup(upstream.Close)
+	tokenServer := newTelegramOAuthTokenServer(t)
 	cfg := testConfig(upstream.URL, "secret")
 	cfg.PanelFacade.Enabled = true
 	cfg.PanelFacade.Session.Issuer = "remnaguard-test"
 	cfg.PanelFacade.Session.Audience = "remnawave-panel"
 	cfg.PanelFacade.Session.TokenTTL = time.Hour
 	cfg.PanelFacade.Session.SecretEnv = "PANEL_SESSION_SECRET"
-	cfg.PanelFacade.Telegram.BotTokenEnv = "TELEGRAM_BOT_TOKEN"
+	cfg.PanelFacade.Telegram.ClientIDEnv = "TELEGRAM_CLIENT_ID"
+	cfg.PanelFacade.Telegram.ClientSecretEnv = "TELEGRAM_CLIENT_SECRET"
+	cfg.PanelFacade.Telegram.FrontendDomain = "restricted.example.com"
+	cfg.PanelFacade.Telegram.AuthURL = "https://oauth.telegram.org/auth"
+	cfg.PanelFacade.Telegram.TokenURL = tokenServer.URL
 	cfg.PanelFacade.Telegram.AuthMaxAge = 5 * time.Minute
 	cfg.PanelFacade.Actors.Telegram = map[string]config.PanelFacadeTelegramActor{"123456789": {CredentialID: "cred", DisplayName: "Alice"}}
 	rt, err := NewRuntime(cfg, "test", "")
@@ -1337,10 +1444,158 @@ func issueTestPanelSession(t *testing.T, rt *Runtime) string {
 
 func postPanelCallback(t *testing.T, rt *Runtime, code string) *httptest.ResponseRecorder {
 	t.Helper()
-	return postPanelCallbackWithState(t, rt, code, "telegram-oauth-state")
+	state, cookie, nonce := authorizeTelegramAttempt(t, rt)
+	return postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode(code, nonce), state, cookie)
+}
+
+func authorizeTelegramState(t *testing.T, rt *Runtime) string {
+	t.Helper()
+	state, _, _ := authorizeTelegramAttempt(t, rt)
+	return state
+}
+
+func authorizeTelegramAttempt(t *testing.T, rt *Runtime) (string, *http.Cookie, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth2/authorize", strings.NewReader(`{"provider":"telegram"}`))
+	req.RequestURI = "/api/auth/oauth2/authorize"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authorize got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Response struct {
+			AuthorizationURL string `json:"authorizationUrl"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(body.Response.AuthorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := u.Query().Get("state")
+	if state == "" {
+		t.Fatalf("authorize returned empty state in %q", body.Response.AuthorizationURL)
+	}
+	cookie := panelOAuthCookieFromRecorder(t, rec)
+	attempt := panelOAuthAttemptForState(t, rt, state)
+	return state, cookie, attempt.Nonce
+}
+
+func panelOAuthCookieFromRecorder(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == panelOAuthStateCookie {
+			return cookie
+		}
+	}
+	t.Fatal("authorize did not set panel oauth state cookie")
+	return nil
+}
+
+func panelOAuthAttemptForState(t *testing.T, rt *Runtime, state string) panelOAuthAttempt {
+	t.Helper()
+	rt.panelOAuth.mu.Lock()
+	defer rt.panelOAuth.mu.Unlock()
+	attempt, ok := rt.panelOAuth.attempts[state]
+	if !ok {
+		t.Fatalf("state %q was not stored", state)
+	}
+	return attempt
+}
+
+func newTelegramOAuthTokenServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	key, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/.well-known/jwks.json" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"keys":[{"kty":"RSA","use":"sig","kid":"test-key","alg":"RS256","n":%s,"e":%s}]}`, strconvQuote(base64.RawURLEncoding.EncodeToString(key.N.Bytes())), strconvQuote(base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())))
+			return
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected Telegram token method %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); !strings.HasPrefix(got, "Basic ") {
+			t.Fatalf("Telegram token request missing basic auth: %q", got)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("redirect_uri") != "https://restricted.example.com/oauth2/callback/telegram" || r.Form.Get("client_id") != "telegram-client-id" || r.Form.Get("code_verifier") == "" {
+			t.Fatalf("unexpected Telegram token form: %#v", r.Form)
+		}
+		code := r.Form.Get("code")
+		if strings.HasPrefix(code, "invalid-code") {
+			http.Error(w, "invalid", http.StatusUnauthorized)
+			return
+		}
+		actorID, nonce, ok := strings.Cut(code, "|")
+		if !ok || actorID == "" || nonce == "" {
+			http.Error(w, "invalid", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"id_token":%s}`, strconvQuote(testIDToken(t, key, actorID, nonce)))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func testIDToken(t *testing.T, key *rsa.PrivateKey, actorID, nonce string) string {
+	t.Helper()
+	if actorID == "unsigned" {
+		header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","kid":"test-key"}`))
+		payload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":"https://oauth.telegram.org","aud":"telegram-client-id","iat":` + strconvFormatInt(time.Now().Unix()) + `,"exp":` + strconvFormatInt(time.Now().Add(time.Minute).Unix()) + `,"nonce":` + strconvQuote(nonce) + `,"id":123456789}`))
+		return header + "." + payload + ".signature"
+	}
+	issuer := "https://oauth.telegram.org"
+	audience := "telegram-client-id"
+	expiresAt := time.Now().Add(time.Minute).Unix()
+	tokenNonce := nonce
+	if actorID == "wrong-iss" {
+		issuer = "https://attacker.example"
+		actorID = "123456789"
+	}
+	if actorID == "wrong-aud" {
+		audience = "other-client-id"
+		actorID = "123456789"
+	}
+	if actorID == "expired" {
+		expiresAt = time.Now().Add(-time.Minute).Unix()
+		actorID = "123456789"
+	}
+	if actorID == "wrong-nonce" {
+		tokenNonce = "wrong-nonce"
+		actorID = "123456789"
+	}
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"test-key"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"iss":` + strconvQuote(issuer) + `,"aud":` + strconvQuote(audience) + `,"iat":` + strconvFormatInt(time.Now().Unix()) + `,"exp":` + strconvFormatInt(expiresAt) + `,"nonce":` + strconvQuote(tokenNonce) + `,"id":` + actorID + `}`))
+	signingInput := header + "." + payload
+	digest := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(cryptorand.Reader, key, crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
 func postPanelCallbackWithState(t *testing.T, rt *Runtime, code, state string) *httptest.ResponseRecorder {
+	t.Helper()
+	var cookie *http.Cookie
+	if state != "" {
+		cookie = &http.Cookie{Name: panelOAuthStateCookie, Value: state}
+	}
+	return postPanelCallbackWithStateAndCookie(t, rt, code, state, cookie)
+}
+
+func postPanelCallbackWithStateAndCookie(t *testing.T, rt *Runtime, code, state string, cookie *http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	body := `{"provider":"telegram","code":` + strconvQuote(code)
 	if state != "" {
@@ -1350,29 +1605,15 @@ func postPanelCallbackWithState(t *testing.T, rt *Runtime, code, state string) *
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth2/callback", strings.NewReader(body))
 	req.RequestURI = "/api/auth/oauth2/callback"
 	req.Header.Set("Content-Type", "application/json")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
 	rec := httptest.NewRecorder()
 	rt.apiHandler().ServeHTTP(rec, req)
 	return rec
 }
 
-func signedTelegramCode(now time.Time) string {
-	return signedTelegramCodeForActor("123456789", now)
-}
-
-func signedTelegramCodeForActor(actorID string, now time.Time) string {
-	values := url.Values{}
-	values.Set("auth_date", strconvFormatInt(now.Unix()))
-	values.Set("first_name", "Alice")
-	values.Set("id", actorID)
-	values.Set("last_name", "Example")
-	values.Set("photo_url", "https://example.com/avatar.jpg")
-	values.Set("username", "alice_example")
-	fields := []string{"auth_date=" + values.Get("auth_date"), "first_name=Alice", "id=" + actorID, "last_name=Example", "photo_url=https://example.com/avatar.jpg", "username=alice_example"}
-	secret := sha256Sum([]byte(telegramTestBotToken))
-	hash := hmacHex(secret, strings.Join(fields, "\n"))
-	values.Set("hash", hash)
-	return values.Encode()
-}
+func telegramOAuthCode(actorID, nonce string) string { return actorID + "|" + nonce }
 
 func assertJSONMatchesFixture(t *testing.T, got []byte, fixture string) {
 	t.Helper()
@@ -1401,6 +1642,29 @@ func assertJSONKeyAbsent(t *testing.T, data []byte, key string) {
 	}
 	if jsonContainsKey(value, key) {
 		t.Fatalf("response contains forbidden key %q: %s", key, string(data))
+	}
+}
+
+func assertTelegramAuthorizeResponse(t *testing.T, data []byte) {
+	t.Helper()
+	var body struct {
+		Response struct {
+			AuthorizationURL string `json:"authorizationUrl"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(body.Response.AuthorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Scheme != "https" || u.Host != "oauth.telegram.org" || u.Path != "/auth" {
+		t.Fatalf("authorize returned non-Telegram OAuth URL %q", body.Response.AuthorizationURL)
+	}
+	query := u.Query()
+	if query.Get("response_type") != "code" || query.Get("client_id") != "telegram-client-id" || query.Get("redirect_uri") != "https://restricted.example.com/oauth2/callback/telegram" || query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") == "" || query.Get("state") == "" || query.Get("state") == "telegram-oauth-state" {
+		t.Fatalf("authorize URL missing OAuth/PKCE values: %q", u.RawQuery)
 	}
 }
 
@@ -1458,7 +1722,7 @@ func assertAuditValue(t *testing.T, event map[string]any, key string, want any) 
 
 func assertNoSecretMaterial(t *testing.T, text string, dynamicSecrets ...string) {
 	t.Helper()
-	secrets := []string{"root", "secret", "panel-session-secret", telegramTestBotToken, "Bearer panel_invalid_secret_value", "rg_cred.secret"}
+	secrets := []string{"root", "secret", "panel-session-secret", "telegram-client-secret", "Bearer panel_invalid_secret_value", "rg_cred.secret"}
 	secrets = append(secrets, dynamicSecrets...)
 	for _, secret := range secrets {
 		if secret != "" && strings.Contains(text, secret) {

@@ -1,5 +1,5 @@
 {
   "provider": "telegram",
   "code": "telegram-oauth-code",
-  "state": "telegram-oauth-state"
+  "state": "test-random-oauth-state"
 }

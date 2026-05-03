@@ -22,7 +22,7 @@
     },
     "branding": {
       "title": "RemnaGuard Restricted Panel",
-      "logoUrl": "https://restricted.example.com/assets/logo.svg"
+      "logoUrl": null
     }
   }
 }

@@ -81,7 +81,11 @@ panel_facade:
     token_ttl: 24h
     secret_env: "PANEL_FACADE_SESSION_SECRET"
   telegram:
-    bot_token_env: "PANEL_FACADE_TELEGRAM_BOT_TOKEN"
+    client_id_env: "PANEL_FACADE_TELEGRAM_CLIENT_ID"
+    client_secret_env: "PANEL_FACADE_TELEGRAM_CLIENT_SECRET"
+    frontend_domain: "restricted.example.com"
+    auth_url: "https://oauth.telegram.org/auth"
+    token_url: "https://oauth.telegram.org/token"
     auth_max_age: 5m
   actors:
     telegram:

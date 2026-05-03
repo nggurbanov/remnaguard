@@ -71,9 +71,10 @@ When `panel_facade.enabled` is true, the following environment variables must be
 - `REMNAWAVE_ROOT_BEARER` — the upstream API bearer RemnaGuard uses to call the original Remnawave backend.
 - `REMNAGUARD_TOKEN_PEPPER` — the secret used to verify raw `rg_...` API tokens.
 - `PANEL_FACADE_SESSION_SECRET` — the signing key for browser session tokens issued by the facade.
-- `PANEL_FACADE_TELEGRAM_BOT_TOKEN` — the Telegram bot token used to verify Login Widget callbacks.
+- `PANEL_FACADE_TELEGRAM_CLIENT_ID` — Telegram OAuth client ID used for the restricted panel login flow.
+- `PANEL_FACADE_TELEGRAM_CLIENT_SECRET` — Telegram OAuth client secret used for the restricted panel login flow.
 
-Use separate secrets for each role. Rotate them independently. The session secret and Telegram bot token must not be reused as the token pepper or upstream bearer.
+Use separate secrets for each role. Rotate them independently. The session secret and Telegram OAuth credentials must not be reused as the token pepper or upstream bearer.
 
 ### Actor Mapping
 
@@ -98,7 +99,11 @@ panel_facade:
     token_ttl: 24h
     secret_env: "PANEL_FACADE_SESSION_SECRET"
   telegram:
-    bot_token_env: "PANEL_FACADE_TELEGRAM_BOT_TOKEN"
+    client_id_env: "PANEL_FACADE_TELEGRAM_CLIENT_ID"
+    client_secret_env: "PANEL_FACADE_TELEGRAM_CLIENT_SECRET"
+    frontend_domain: "restricted.example.com"
+    auth_url: "https://oauth.telegram.org/auth"
+    token_url: "https://oauth.telegram.org/token"
     auth_max_age: 5m
   actors:
     telegram:
@@ -142,9 +147,9 @@ Because the facade does not fork the Remnawave frontend, the unchanged UI may st
 ### Secret Placement and Rotation
 
 - Store all secrets in environment variables or a secrets manager, never in YAML files.
-- The browser receives only a `panel_` session token after successful Telegram login. It never receives raw `rg_...` tokens, the upstream root bearer, the Telegram bot token, or the session signing secret.
+- The browser receives only a `panel_` session token after successful Telegram login. It never receives raw `rg_...` tokens, the upstream root bearer, Telegram OAuth credentials, or the session signing secret.
 - Rotate the session secret by changing the environment variable and restarting RemnaGuard. Existing browser sessions will expire naturally.
-- Rotate the Telegram bot token through the BotFather, then update the environment variable and restart.
+- Rotate the Telegram OAuth client secret, then update the environment variable and restart.
 
 ### Example Config
 

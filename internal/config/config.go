@@ -136,8 +136,12 @@ type PanelFacadeSessionConfig struct {
 }
 
 type PanelFacadeTelegramConfig struct {
-	BotTokenEnv string        `yaml:"bot_token_env"`
-	AuthMaxAge  time.Duration `yaml:"auth_max_age"`
+	ClientIDEnv     string        `yaml:"client_id_env"`
+	ClientSecretEnv string        `yaml:"client_secret_env"`
+	FrontendDomain  string        `yaml:"frontend_domain"`
+	AuthURL         string        `yaml:"auth_url"`
+	TokenURL        string        `yaml:"token_url"`
+	AuthMaxAge      time.Duration `yaml:"auth_max_age"`
 }
 
 type PanelFacadeActorsConfig struct {
@@ -433,11 +437,35 @@ func (c *Config) validatePanelFacade() error {
 	if strings.TrimSpace(os.Getenv(panel.Session.SecretEnv)) == "" {
 		return errors.New("panel_facade.session.secret_env must resolve to a non-empty value")
 	}
-	if strings.TrimSpace(panel.Telegram.BotTokenEnv) == "" {
-		return errors.New("panel_facade.telegram.bot_token_env is required")
+	if strings.TrimSpace(panel.Telegram.ClientIDEnv) == "" {
+		return errors.New("panel_facade.telegram.client_id_env is required")
 	}
-	if strings.TrimSpace(os.Getenv(panel.Telegram.BotTokenEnv)) == "" {
-		return errors.New("panel_facade.telegram.bot_token_env must resolve to a non-empty value")
+	if strings.TrimSpace(os.Getenv(panel.Telegram.ClientIDEnv)) == "" {
+		return errors.New("panel_facade.telegram.client_id_env must resolve to a non-empty value")
+	}
+	if strings.TrimSpace(panel.Telegram.ClientSecretEnv) == "" {
+		return errors.New("panel_facade.telegram.client_secret_env is required")
+	}
+	if strings.TrimSpace(os.Getenv(panel.Telegram.ClientSecretEnv)) == "" {
+		return errors.New("panel_facade.telegram.client_secret_env must resolve to a non-empty value")
+	}
+	if strings.TrimSpace(panel.Telegram.FrontendDomain) == "" {
+		return errors.New("panel_facade.telegram.frontend_domain is required")
+	}
+	if strings.ContainsAny(panel.Telegram.FrontendDomain, "/?#") {
+		return errors.New("panel_facade.telegram.frontend_domain must be a host name without scheme or path")
+	}
+	if strings.TrimSpace(panel.Telegram.AuthURL) == "" {
+		return errors.New("panel_facade.telegram.auth_url is required")
+	}
+	if strings.TrimSpace(panel.Telegram.TokenURL) == "" {
+		return errors.New("panel_facade.telegram.token_url is required")
+	}
+	if err := validateHTTPSURL(panel.Telegram.AuthURL, "panel_facade.telegram.auth_url"); err != nil {
+		return err
+	}
+	if err := validateHTTPSURL(panel.Telegram.TokenURL, "panel_facade.telegram.token_url"); err != nil {
+		return err
 	}
 	if panel.Telegram.AuthMaxAge <= 0 {
 		return errors.New("panel_facade.telegram.auth_max_age must be positive")
@@ -459,6 +487,17 @@ func (c *Config) validatePanelFacade() error {
 		if _, cred := c.FindCredential(credentialID); cred == nil {
 			return fmt.Errorf("panel_facade actor %q references missing or disabled credential %q", telegramID, credentialID)
 		}
+	}
+	return nil
+}
+
+func validateHTTPSURL(raw, field string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("%s must be absolute", field)
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
+		return fmt.Errorf("%s must be https unless localhost http", field)
 	}
 	return nil
 }
@@ -595,6 +634,14 @@ func isLocalHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func validHeaderName(name string) bool {
