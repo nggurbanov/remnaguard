@@ -1114,7 +1114,7 @@ func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T
 	upstreamCalls := 0
 	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		if r.URL.RequestURI() != "/api/users?filterModes=%7B%22username%22%3A%22contains%22%7D&filters=%5B%5D&size=5000&sorting=%5B%5D&start=0" {
+		if r.URL.RequestURI() != "/api/users?filterModes=%7B%22username%22%3A%22contains%22%7D&filters=%5B%5D&size=1000&sorting=%5B%5D&start=0" {
 			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1152,7 +1152,7 @@ func TestPanelRestrictedUserListFiltersBeforePaging(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if upstreamURI != "/api/users?size=5000&start=0" {
+	if upstreamURI != "/api/users?size=1000&start=0" {
 		t.Fatalf("restricted panel should expand upstream page before filtering, got %q", upstreamURI)
 	}
 	if !strings.Contains(rec.Body.String(), `"username":"restricted-e"`) || strings.Contains(rec.Body.String(), "restricted-a") || strings.Contains(rec.Body.String(), "restricted-c") || strings.Contains(rec.Body.String(), "foreign-") {

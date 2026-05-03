@@ -947,7 +947,7 @@ func panelUpstreamRawQuery(req *http.Request, route routes.Route, tok *config.To
 		return rawQuery
 	}
 	values.Set("start", "0")
-	values.Set("size", "5000")
+	values.Set("size", "1000")
 	values.Del("offset")
 	values.Del("page")
 	values.Del("limit")
