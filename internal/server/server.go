@@ -1329,6 +1329,9 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 	if route.Support != routes.PolicyEnforced || res.StatusCode < 200 || res.StatusCode >= 300 {
 		return nil
 	}
+	if tokenHasPrivilegedScope(tok) {
+		return nil
+	}
 	switch route.Name {
 	case "user.list":
 		return filterJSONList(res, func(item any) bool {
@@ -1370,6 +1373,18 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 	default:
 		return nil
 	}
+}
+
+func tokenHasPrivilegedScope(tok *config.TokenPolicy) bool {
+	if tok == nil {
+		return false
+	}
+	for _, scope := range tok.Scopes {
+		if scope == "remnawave:*" || scope == "privileged:*" {
+			return true
+		}
+	}
+	return false
 }
 
 func enforceSubscriptionPageConfigResponse(tok *config.TokenPolicy, res *proxy.Response) error {

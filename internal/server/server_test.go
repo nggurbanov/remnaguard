@@ -1132,6 +1132,31 @@ func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T
 	}
 }
 
+func TestPanelSessionPrivilegedReadKeepsFrontendResponseShape(t *testing.T) {
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/internal-squads" {
+			t.Fatalf("unexpected upstream path %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"response":{"total":1,"internalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","viewPosition":1,"info":{"membersCount":2,"inboundsCount":3},"inbounds":[{"tag":"vless"}],"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z"}]}}`))
+	})
+	rt.state.Load().cfg.Tokens[0].Scopes = []string{"remnawave:*"}
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads/", nil)
+	req.RequestURI = "/api/internal-squads/"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected privileged panel read to proxy, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"membersCount", "inbounds", "createdAt"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("privileged panel response lost %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestPanelSessionFacadesAdminJWTOnlySettingsReads(t *testing.T) {
 	upstreamCalls := 0
 	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
