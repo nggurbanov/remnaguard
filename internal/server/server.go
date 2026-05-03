@@ -312,7 +312,8 @@ func (r *Runtime) apiHandler() http.Handler {
 		if panelAuditContextFromRequest(req) != nil {
 			stripConditionalRequestHeaders(req)
 		}
-		upstreamRes, err := st.proxy.RoundTrip(w, req, path, rawQuery, false)
+		upstreamRawQuery := panelUpstreamRawQuery(req, route, tok, rawQuery)
+		upstreamRes, err := st.proxy.RoundTrip(w, req, path, upstreamRawQuery, false)
 		if err != nil {
 			setPanelAuditAuthEventType(req, "upstream")
 			r.deny(w, req, route.Name, tok.ID, cred.ID, "upstream_unavailable", http.StatusBadGateway)
@@ -325,7 +326,7 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
-		if err := filterResponsePolicy(route, tok, upstreamRes); err != nil {
+		if err := filterResponsePolicy(route, tok, upstreamRes, req, rawQuery); err != nil {
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusBadGateway)
 			return
 		}
@@ -937,6 +938,22 @@ func validateRequestQuery(req *http.Request, route routes.Route, rawQuery string
 	return validateRouteQuery(route, rawQuery)
 }
 
+func panelUpstreamRawQuery(req *http.Request, route routes.Route, tok *config.TokenPolicy, rawQuery string) string {
+	if panelAuditContextFromRequest(req) == nil || route.Name != "user.list" || tokenHasPrivilegedScope(tok) {
+		return rawQuery
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return rawQuery
+	}
+	values.Set("start", "0")
+	values.Set("size", "5000")
+	values.Del("offset")
+	values.Del("page")
+	values.Del("limit")
+	return values.Encode()
+}
+
 func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request, cfg *config.Config, route routes.Route, path string, tok *config.TokenPolicy, cred *config.Credential) bool {
 	if panelAuditContextFromRequest(req) == nil || req.Method != http.MethodGet {
 		return false
@@ -1017,6 +1034,12 @@ func panelEmptyResponse(route routes.Route, path string) any {
 		return map[string]any{"internalSquads": []any{}, "total": 0}
 	case "external-squads":
 		return map[string]any{"externalSquads": []any{}, "total": 0}
+	case "config-profiles":
+		return map[string]any{"configProfiles": []any{}, "total": 0}
+	case "subscription-settings":
+		return map[string]any{}
+	case "subscription-templates":
+		return map[string]any{"templates": []any{}, "total": 0}
 	case "subscription-page-configs":
 		return map[string]any{"configs": []any{}, "total": 0}
 	case "system", "bandwidth-stats", "metadata":
@@ -1403,7 +1426,7 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 	}
 }
 
-func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *proxy.Response) error {
+func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *proxy.Response, req *http.Request, rawQuery string) error {
 	if route.Support != routes.PolicyEnforced || res.StatusCode < 200 || res.StatusCode >= 300 {
 		return nil
 	}
@@ -1412,7 +1435,7 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 	}
 	switch route.Name {
 	case "user.list":
-		return filterJSONList(res, func(item any) bool {
+		return filterJSONListPaged(res, panelResponsePage(req, rawQuery), func(item any) bool {
 			body, err := json.Marshal(item)
 			if err != nil {
 				return false
@@ -1579,13 +1602,71 @@ func sanitizeSquadListObject(item any) {
 }
 
 func filterJSONList(res *proxy.Response, keep func(any) bool) error {
+	return filterJSONListPaged(res, nil, keep)
+}
+
+type responsePage struct {
+	start int
+	size  int
+}
+
+func panelResponsePage(req *http.Request, rawQuery string) *responsePage {
+	if panelAuditContextFromRequest(req) == nil {
+		return nil
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return nil
+	}
+	size := firstPositiveInt(values, "size", "limit")
+	if size <= 0 {
+		return nil
+	}
+	start := firstNonNegativeInt(values, "start", "offset")
+	if start == 0 {
+		if page := firstPositiveInt(values, "page"); page > 1 {
+			start = (page - 1) * size
+		}
+	}
+	return &responsePage{start: start, size: size}
+}
+
+func firstPositiveInt(values url.Values, keys ...string) int {
+	for _, key := range keys {
+		value := strings.TrimSpace(values.Get(key))
+		if value == "" {
+			continue
+		}
+		n, err := strconv.Atoi(value)
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func firstNonNegativeInt(values url.Values, keys ...string) int {
+	for _, key := range keys {
+		value := strings.TrimSpace(values.Get(key))
+		if value == "" {
+			continue
+		}
+		n, err := strconv.Atoi(value)
+		if err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func filterJSONListPaged(res *proxy.Response, page *responsePage, keep func(any) bool) error {
 	var root any
 	dec := json.NewDecoder(bytes.NewReader(res.Body))
 	dec.UseNumber()
 	if err := dec.Decode(&root); err != nil {
 		return err
 	}
-	filtered, count, ok := filterListNode(root, keep)
+	filtered, count, ok := filterListNodePaged(root, page, keep)
 	if !ok {
 		return fmt.Errorf("unfilterable_list_response")
 	}
@@ -1597,6 +1678,50 @@ func filterJSONList(res *proxy.Response, keep func(any) bool) error {
 	res.Body = body
 	res.Header.Del("Content-Length")
 	return nil
+}
+
+func filterListNodePaged(node any, page *responsePage, keep func(any) bool) (any, int, bool) {
+	switch typed := node.(type) {
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			if keep(item) {
+				out = append(out, item)
+			}
+		}
+		count := len(out)
+		if page != nil {
+			out = slicePage(out, page)
+		}
+		return out, count, true
+	case map[string]any:
+		for _, key := range []string{"response", "users", "internalSquads", "externalSquads", "subscriptionPageConfigs", "subscription_page_configs", "configs", "items", "data"} {
+			child, ok := typed[key]
+			if !ok {
+				continue
+			}
+			filtered, count, ok := filterListNodePaged(child, page, keep)
+			if ok {
+				typed[key] = filtered
+				return typed, count, true
+			}
+		}
+	}
+	return nil, 0, false
+}
+
+func slicePage(items []any, page *responsePage) []any {
+	if page == nil || page.size <= 0 {
+		return items
+	}
+	if page.start >= len(items) {
+		return []any{}
+	}
+	end := page.start + page.size
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[page.start:end]
 }
 
 func filterListNode(node any, keep func(any) bool) (any, int, bool) {

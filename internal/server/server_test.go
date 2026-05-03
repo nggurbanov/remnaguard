@@ -1114,7 +1114,7 @@ func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T
 	upstreamCalls := 0
 	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		if r.URL.RequestURI() != "/api/users?start=0&size=25&filters=%5B%5D&filterModes=%7B%22username%22%3A%22contains%22%7D&sorting=%5B%5D" {
+		if r.URL.RequestURI() != "/api/users?filterModes=%7B%22username%22%3A%22contains%22%7D&filters=%5B%5D&size=5000&sorting=%5B%5D&start=0" {
 			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1132,6 +1132,34 @@ func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+}
+
+func TestPanelRestrictedUserListFiltersBeforePaging(t *testing.T) {
+	var upstreamURI string
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, r *http.Request) {
+		upstreamURI = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"total":5,"users":[{"uuid":"u1","username":"restricted-a"},{"uuid":"u2","username":"foreign-b"},{"uuid":"u3","username":"restricted-c"},{"uuid":"u4","username":"foreign-d"},{"uuid":"u5","username":"restricted-e"}]}}`))
+	})
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users?start=2&size=2", nil)
+	req.RequestURI = "/api/users?start=2&size=2"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamURI != "/api/users?size=5000&start=0" {
+		t.Fatalf("restricted panel should expand upstream page before filtering, got %q", upstreamURI)
+	}
+	if !strings.Contains(rec.Body.String(), `"username":"restricted-e"`) || strings.Contains(rec.Body.String(), "restricted-a") || strings.Contains(rec.Body.String(), "restricted-c") || strings.Contains(rec.Body.String(), "foreign-") {
+		t.Fatalf("unexpected filtered page body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"total":3`) {
+		t.Fatalf("expected filtered total before page slicing, got %s", rec.Body.String())
 	}
 }
 
@@ -1303,6 +1331,29 @@ func TestPanelSessionMissingRequiredScopeDoesNotCallUpstream(t *testing.T) {
 	assertAuditValue(t, last, "path", "/api/internal-squads")
 	assertAuditValue(t, last, "reason", "missing_scope")
 	assertNoSecretMaterial(t, rec.Body.String()+auditOut.String(), panelToken)
+}
+
+func TestPanelSessionMissingPrivilegedReadScopeReturnsSchemaObject(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config-profiles", nil)
+	req.RequestURI = "/api/config-profiles"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"configProfiles":[]`) || !strings.Contains(rec.Body.String(), `"total":0`) || strings.Contains(rec.Body.String(), `"response":[]`) {
+		t.Fatalf("expected schema-safe config profiles body, got %s", rec.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("denied panel config profiles reached upstream %d time(s)", upstreamCalls)
+	}
 }
 
 func TestPanelSessionMissingRequiredScopeIgnoresUnsafeReportProxy(t *testing.T) {
