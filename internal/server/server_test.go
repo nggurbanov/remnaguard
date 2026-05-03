@@ -1132,6 +1132,38 @@ func TestPanelSessionUsesStructuralQueryValidationForFrontendTables(t *testing.T
 	}
 }
 
+func TestPanelSessionFacadesAdminJWTOnlySettingsReads(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	rt.state.Load().cfg.Tokens[0].Scopes = []string{"remnawave:*"}
+	panelToken := issueTestPanelSession(t, rt)
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{path: "/api/remnawave-settings", want: "RemnaGuard Restricted Panel"},
+		{path: "/api/tokens", want: "isDocsEnabled"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.RequestURI = tc.path
+		req.Header.Set("Authorization", "Bearer "+panelToken)
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s got %d want 200: %s", tc.path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), tc.want) {
+			t.Fatalf("%s response missing %q: %s", tc.path, tc.want, rec.Body.String())
+		}
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("settings facade should not call upstream, got %d calls", upstreamCalls)
+	}
+}
+
 func TestPanelSessionMissingRequiredScopeDoesNotCallUpstream(t *testing.T) {
 	upstreamCalls := 0
 	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {

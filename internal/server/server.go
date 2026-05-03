@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -263,6 +264,9 @@ func (r *Runtime) apiHandler() http.Handler {
 		dec := policy.Decide(tok, route)
 		if !dec.Allow && (panelAuditContextFromRequest(req) != nil || !cfg.Report.Enabled || !cfg.Report.UnsafeReportProxy) {
 			r.deny(w, req, route.Name, tok.ID, cred.ID, dec.Reason, http.StatusForbidden)
+			return
+		}
+		if r.handlePanelReadFacade(w, req, cfg, route, path, tok, cred) {
 			return
 		}
 		if isRestrictedWrite(route) && route.Support == routes.PolicyEnforced {
@@ -910,6 +914,53 @@ func validateRequestQuery(req *http.Request, route routes.Route, rawQuery string
 		return rghttp.ValidateQueryStructural(rawQuery)
 	}
 	return validateRouteQuery(route, rawQuery)
+}
+
+func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request, cfg *config.Config, route routes.Route, path string, tok *config.TokenPolicy, cred *config.Credential) bool {
+	if panelAuditContextFromRequest(req) == nil || req.Method != http.MethodGet {
+		return false
+	}
+	switch path {
+	case "/api/remnawave-settings":
+		writeJSON(w, http.StatusOK, panelRemnawaveSettingsResponse(cfg))
+		r.audit.EmitRequestFields("panel_facade_read", route.Name, tok.ID, cred.ID, "ok", req.Method, path, http.StatusOK, panelAuditFields(req, "settings", 0))
+		return true
+	case "/api/tokens":
+		writeJSON(w, http.StatusOK, panelAPITokensResponse())
+		r.audit.EmitRequestFields("panel_facade_read", route.Name, tok.ID, cred.ID, "ok", req.Method, path, http.StatusOK, panelAuditFields(req, "settings", 0))
+		return true
+	default:
+		return false
+	}
+}
+
+func panelRemnawaveSettingsResponse(cfg *config.Config) map[string]any {
+	return map[string]any{"response": map[string]any{
+		"passkeySettings":  map[string]any{"enabled": false, "rpId": nil, "origin": nil},
+		"passwordSettings": map[string]any{"enabled": false},
+		"brandingSettings": map[string]any{"title": "RemnaGuard Restricted Panel", "logoUrl": nil},
+		"oauth2Settings": map[string]any{
+			"github":   map[string]any{"enabled": false, "clientId": nil, "clientSecret": nil, "allowedEmails": []string{}},
+			"pocketid": map[string]any{"enabled": false, "clientId": nil, "clientSecret": nil, "plainDomain": nil, "allowedEmails": []string{}},
+			"yandex":   map[string]any{"enabled": false, "clientId": nil, "clientSecret": nil, "allowedEmails": []string{}},
+			"keycloak": map[string]any{"enabled": false, "realm": nil, "clientId": nil, "clientSecret": nil, "frontendDomain": nil, "keycloakDomain": nil, "allowedEmails": []string{}},
+			"generic":  map[string]any{"enabled": false, "clientId": nil, "clientSecret": nil, "withPkce": false, "authorizationUrl": nil, "tokenUrl": nil, "frontendDomain": nil, "allowedEmails": []string{}},
+			"telegram": map[string]any{"enabled": true, "clientId": os.Getenv(cfg.PanelFacade.Telegram.ClientIDEnv), "clientSecret": nil, "allowedIds": panelTelegramActorIDs(cfg), "frontendDomain": cfg.PanelFacade.Telegram.FrontendDomain},
+		},
+	}}
+}
+
+func panelAPITokensResponse() map[string]any {
+	return map[string]any{"response": map[string]any{"apiKeys": []any{}, "docs": map[string]any{"isDocsEnabled": false, "scalarPath": nil, "swaggerPath": nil}}}
+}
+
+func panelTelegramActorIDs(cfg *config.Config) []string {
+	ids := make([]string, 0, len(cfg.PanelFacade.Actors.Telegram))
+	for id := range cfg.PanelFacade.Actors.Telegram {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func effectiveRoute(cfg *config.Config, route routes.Route) routes.Route {
