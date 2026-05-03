@@ -1,0 +1,93 @@
+server:
+  api_listen: ":8080"
+  local_listen: "127.0.0.1:8081"
+  max_header_bytes: 1048576
+
+upstream:
+  base_url: "https://remnawave.example.com"
+  bearer_env: "REMNAWAVE_ROOT_BEARER"
+  version_path: "/api/system/metadata"
+
+compatibility:
+  remnawave_version: "2.7.4"
+  assume_version: ""
+  allow_version_mismatch: false
+
+limits:
+  max_path_length: 2048
+  max_query_length: 4096
+  max_body_bytes: 1048576
+  upstream_body_bytes: 67108864
+  global_concurrency: 128
+  per_token_concurrency: 8
+  default_rate: "600/m"
+
+metrics:
+  enabled: false
+
+audit:
+  stdout: true
+  pepper_env: "REMNAGUARD_AUDIT_PEPPER"
+  sqlite_path: ""
+
+alerts:
+  enabled: false
+  telegram:
+    enabled: false
+    bot_token_env: "REMNAGUARD_ALERTS_TELEGRAM_TOKEN"
+    chat_id_env: "REMNAGUARD_ALERTS_TELEGRAM_CHAT_ID"
+    cooldown: 5m
+    queue_size: 100
+    timeout: 5s
+    api_base_url: "https://api.telegram.org"
+
+report:
+  enabled: false
+  unsafe_report_proxy: false
+
+public_subscriptions:
+  enabled: false
+
+reload:
+  sighup: true
+  watch_files: false
+  allow_insecure_secret_file_permissions: false
+
+write_safety:
+  single_writer: false
+  enable_restricted_writes: false
+
+tokens:
+  - id: panel-operator
+    scopes:
+      - users:read
+      - subscriptions:read
+      - metadata:read
+    constraints:
+      username_prefix: ""
+      email_domains: []
+      max_traffic_limit_bytes: 0
+      forbid_unlimited_traffic: false
+      max_description_length: 256
+    credentials:
+      - id: panel-operator-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
+
+panel_facade:
+  enabled: true
+  session:
+    issuer: "remnaguard-panel"
+    audience: "remnaguard-panel"
+    token_ttl: 24h
+    secret_env: "PANEL_FACADE_SESSION_SECRET"
+  telegram:
+    bot_token_env: "PANEL_FACADE_TELEGRAM_BOT_TOKEN"
+    auth_max_age: 5m
+  actors:
+    telegram:
+      "123456789":
+        credential_id: "panel-operator-credential"
+        display_name: "Example Operator"
+
+include:
+  - "tokens.d/*.yaml"

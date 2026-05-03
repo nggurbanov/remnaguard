@@ -26,6 +26,7 @@ type Config struct {
 	Alerts        AlertsConfig        `yaml:"alerts"`
 	Report        ReportConfig        `yaml:"report"`
 	PublicSubs    PublicSubsConfig    `yaml:"public_subscriptions"`
+	PanelFacade   PanelFacadeConfig   `yaml:"panel_facade"`
 	Reload        ReloadConfig        `yaml:"reload"`
 	WriteSafety   WriteSafetyConfig   `yaml:"write_safety"`
 	Tokens        []TokenPolicy       `yaml:"tokens"`
@@ -118,6 +119,34 @@ type PublicSubsConfig struct {
 	AuthHeaderEnv           string            `yaml:"auth_header_env"`
 	PerIPConcurrency        int               `yaml:"per_ip_concurrency"`
 	PerIPRate               string            `yaml:"per_ip_rate"`
+}
+
+type PanelFacadeConfig struct {
+	Enabled  bool                      `yaml:"enabled"`
+	Session  PanelFacadeSessionConfig  `yaml:"session"`
+	Telegram PanelFacadeTelegramConfig `yaml:"telegram"`
+	Actors   PanelFacadeActorsConfig   `yaml:"actors"`
+}
+
+type PanelFacadeSessionConfig struct {
+	Issuer    string        `yaml:"issuer"`
+	Audience  string        `yaml:"audience"`
+	TokenTTL  time.Duration `yaml:"token_ttl"`
+	SecretEnv string        `yaml:"secret_env"`
+}
+
+type PanelFacadeTelegramConfig struct {
+	BotTokenEnv string        `yaml:"bot_token_env"`
+	AuthMaxAge  time.Duration `yaml:"auth_max_age"`
+}
+
+type PanelFacadeActorsConfig struct {
+	Telegram map[string]PanelFacadeTelegramActor `yaml:"telegram"`
+}
+
+type PanelFacadeTelegramActor struct {
+	CredentialID string `yaml:"credential_id"`
+	DisplayName  string `yaml:"display_name"`
 }
 
 type ReloadConfig struct {
@@ -231,6 +260,9 @@ func (c *Config) Validate() error {
 		return errors.New("exactly one upstream bearer source must be configured")
 	}
 	if err := c.validateAlerts(); err != nil {
+		return err
+	}
+	if err := c.validatePanelFacade(); err != nil {
 		return err
 	}
 	if c.resolveBearer() == "" {
@@ -376,6 +408,56 @@ func (c *Config) Validate() error {
 	for name := range c.Upstream.ExtraHeaders {
 		if protectedOutboundHeader(name) {
 			return fmt.Errorf("protected or invalid upstream extra header %q", name)
+		}
+	}
+	return nil
+}
+
+func (c *Config) validatePanelFacade() error {
+	panel := c.PanelFacade
+	if !panel.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(panel.Session.Issuer) == "" {
+		return errors.New("panel_facade.session.issuer is required")
+	}
+	if strings.TrimSpace(panel.Session.Audience) == "" {
+		return errors.New("panel_facade.session.audience is required")
+	}
+	if panel.Session.TokenTTL <= 0 {
+		return errors.New("panel_facade.session.token_ttl must be positive")
+	}
+	if strings.TrimSpace(panel.Session.SecretEnv) == "" {
+		return errors.New("panel_facade.session.secret_env is required")
+	}
+	if strings.TrimSpace(os.Getenv(panel.Session.SecretEnv)) == "" {
+		return errors.New("panel_facade.session.secret_env must resolve to a non-empty value")
+	}
+	if strings.TrimSpace(panel.Telegram.BotTokenEnv) == "" {
+		return errors.New("panel_facade.telegram.bot_token_env is required")
+	}
+	if strings.TrimSpace(os.Getenv(panel.Telegram.BotTokenEnv)) == "" {
+		return errors.New("panel_facade.telegram.bot_token_env must resolve to a non-empty value")
+	}
+	if panel.Telegram.AuthMaxAge <= 0 {
+		return errors.New("panel_facade.telegram.auth_max_age must be positive")
+	}
+	if len(panel.Actors.Telegram) == 0 {
+		return errors.New("panel_facade.actors.telegram must contain at least one actor")
+	}
+	for telegramID, actor := range panel.Actors.Telegram {
+		if strings.TrimSpace(telegramID) == "" {
+			return errors.New("panel_facade.actors.telegram contains an empty telegram id")
+		}
+		credentialID := strings.TrimSpace(actor.CredentialID)
+		if credentialID == "" {
+			return fmt.Errorf("panel_facade actor %q credential_id is required", telegramID)
+		}
+		if strings.HasPrefix(credentialID, "rg_") {
+			return fmt.Errorf("panel_facade actor %q credential_id must reference a stored credential id, not a raw token", telegramID)
+		}
+		if _, cred := c.FindCredential(credentialID); cred == nil {
+			return fmt.Errorf("panel_facade actor %q references missing or disabled credential %q", telegramID, credentialID)
 		}
 	}
 	return nil

@@ -1,0 +1,16 @@
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/password_login
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/register
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/passkey_options
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/passkey_verify
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/github_authorize
+=== RUN   TestRemnawaveAuthCompatibilityUnsupportedFixtures/github_callback
+--- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/password_login (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/register (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/passkey_options (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/passkey_verify (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/github_authorize (0.00s)
+    --- PASS: TestRemnawaveAuthCompatibilityUnsupportedFixtures/github_callback (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/server	0.189s

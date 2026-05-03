@@ -49,14 +49,22 @@ func New(stdout bool, pepper []byte, sqlitePath string) (*Logger, error) {
 }
 
 func (l *Logger) Emit(event, route, tokenID, credentialID, reason string, status int) {
-	l.emit(event, route, tokenID, credentialID, reason, "", "", status)
+	l.emit(event, route, tokenID, credentialID, reason, "", "", status, nil)
 }
 
 func (l *Logger) EmitRequest(event, route, tokenID, credentialID, reason, method, path string, status int) {
-	l.emit(event, route, tokenID, credentialID, reason, method, path, status)
+	l.emit(event, route, tokenID, credentialID, reason, method, path, status, nil)
 }
 
-func (l *Logger) emit(event, route, tokenID, credentialID, reason, method, path string, status int) {
+func (l *Logger) EmitRequestFields(event, route, tokenID, credentialID, reason, method, path string, status int, fields map[string]any) {
+	l.emit(event, route, tokenID, credentialID, reason, method, path, status, fields)
+}
+
+func (l *Logger) SetOutputForTest(out io.Writer) {
+	l.out = out
+}
+
+func (l *Logger) emit(event, route, tokenID, credentialID, reason, method, path string, status int, fields map[string]any) {
 	ts := time.Now().UTC().Format(time.RFC3339Nano)
 	payload := map[string]any{
 		"ts":            ts,
@@ -72,6 +80,11 @@ func (l *Logger) emit(event, route, tokenID, credentialID, reason, method, path 
 	}
 	if path != "" {
 		payload["path"] = path
+	}
+	for key, value := range fields {
+		if key != "" && value != nil {
+			payload[key] = value
+		}
 	}
 	_ = json.NewEncoder(l.out).Encode(payload)
 	if l.db != nil {

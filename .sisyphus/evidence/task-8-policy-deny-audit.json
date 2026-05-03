@@ -1,0 +1,12 @@
+{"Time":"2026-05-03T22:49:16.755366+03:00","Action":"start","Package":"github.com/nggurbanov/remnaguard/internal/server"}
+{"Time":"2026-05-03T22:49:17.081363+03:00","Action":"run","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets"}
+{"Time":"2026-05-03T22:49:17.081406+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets","Output":"=== RUN   TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets\n"}
+{"Time":"2026-05-03T22:49:17.084572+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets","Output":"--- PASS: TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets (0.00s)\n"}
+{"Time":"2026-05-03T22:49:17.084585+03:00","Action":"pass","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelAuthFacadeUnmappedCallbackAuditIncludesActorWithoutSecrets","Elapsed":0}
+{"Time":"2026-05-03T22:49:17.084604+03:00","Action":"run","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelSessionMissingRequiredScopeDoesNotCallUpstream"}
+{"Time":"2026-05-03T22:49:17.084607+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelSessionMissingRequiredScopeDoesNotCallUpstream","Output":"=== RUN   TestPanelSessionMissingRequiredScopeDoesNotCallUpstream\n"}
+{"Time":"2026-05-03T22:49:17.086942+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelSessionMissingRequiredScopeDoesNotCallUpstream","Output":"--- PASS: TestPanelSessionMissingRequiredScopeDoesNotCallUpstream (0.00s)\n"}
+{"Time":"2026-05-03T22:49:17.086949+03:00","Action":"pass","Package":"github.com/nggurbanov/remnaguard/internal/server","Test":"TestPanelSessionMissingRequiredScopeDoesNotCallUpstream","Elapsed":0}
+{"Time":"2026-05-03T22:49:17.086984+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Output":"PASS\n"}
+{"Time":"2026-05-03T22:49:17.087602+03:00","Action":"output","Package":"github.com/nggurbanov/remnaguard/internal/server","Output":"ok  \tgithub.com/nggurbanov/remnaguard/internal/server\t0.332s\n"}
+{"Time":"2026-05-03T22:49:17.089171+03:00","Action":"pass","Package":"github.com/nggurbanov/remnaguard/internal/server","Elapsed":0.334}

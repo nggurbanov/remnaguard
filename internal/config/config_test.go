@@ -180,3 +180,110 @@ func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateAcceptsDisabledPanelFacadeWithoutPanelEnv(t *testing.T) {
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.PanelFacade.Session.SecretEnv = "MISSING_PANEL_SESSION_SECRET"
+	cfg.PanelFacade.Telegram.BotTokenEnv = "MISSING_PANEL_TELEGRAM_TOKEN"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected disabled panel facade to ignore panel env vars: %v", err)
+	}
+}
+
+func TestValidateAcceptsEnabledPanelFacade(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid panel facade config: %v", err)
+	}
+}
+
+func TestValidateRejectsPanelFacadeMissingSessionSecretEnv(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Session.SecretEnv = "MISSING_PANEL_SESSION_SECRET"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected missing panel session secret env to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeMissingTelegramBotTokenEnv(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Telegram.BotTokenEnv = "MISSING_PANEL_TELEGRAM_TOKEN"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected missing panel telegram bot token env to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeRawActorCredential(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Actors.Telegram["123456789"] = PanelFacadeTelegramActor{CredentialID: "rg_", DisplayName: "Alice"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected raw panel actor credential value to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeMissingCredential(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.PanelFacade.Actors.Telegram["123456789"] = PanelFacadeTelegramActor{CredentialID: "missing-cred", DisplayName: "Alice"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected missing panel actor credential to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeDisabledCredential(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.Tokens[0].Credentials[0].Disabled = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected disabled panel actor credential to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeDisabledToken(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	cfg.Tokens[0].Disabled = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected credential on disabled token to be rejected")
+	}
+}
+
+func TestValidateRejectsPanelFacadeEmptyTelegramActorID(t *testing.T) {
+	cfg := validPanelFacadeConfig(t)
+	delete(cfg.PanelFacade.Actors.Telegram, "123456789")
+	cfg.PanelFacade.Actors.Telegram[" "] = PanelFacadeTelegramActor{CredentialID: "panel-cred", DisplayName: "Alice"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected empty telegram actor id to be rejected")
+	}
+}
+
+func validPanelFacadeConfig(t *testing.T) *Config {
+	t.Helper()
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("PANEL_SESSION_SECRET", "session-secret")
+	t.Setenv("PANEL_TELEGRAM_TOKEN", "telegram-token")
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.Tokens = []TokenPolicy{{
+		ID:          "panel-token",
+		Scopes:      []string{"users:read"},
+		Credentials: []Credential{{ID: "panel-cred", HMACSHA256: "digest"}},
+	}}
+	cfg.PanelFacade = PanelFacadeConfig{
+		Enabled: true,
+		Session: PanelFacadeSessionConfig{
+			Issuer:    "remnaguard",
+			Audience:  "remnawave-panel",
+			TokenTTL:  15 * time.Minute,
+			SecretEnv: "PANEL_SESSION_SECRET",
+		},
+		Telegram: PanelFacadeTelegramConfig{
+			BotTokenEnv: "PANEL_TELEGRAM_TOKEN",
+			AuthMaxAge:  5 * time.Minute,
+		},
+		Actors: PanelFacadeActorsConfig{Telegram: map[string]PanelFacadeTelegramActor{
+			"123456789": {CredentialID: "panel-cred", DisplayName: "Alice"},
+		}},
+	}
+	return cfg
+}

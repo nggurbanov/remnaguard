@@ -1,0 +1,4 @@
+=== RUN   TestPanelSessionRejectsExpiredToken
+--- PASS: TestPanelSessionRejectsExpiredToken (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/auth	0.162s

@@ -1,0 +1,15 @@
+=== RUN   TestParseBearer
+--- PASS: TestParseBearer (0.00s)
+=== RUN   TestVerify
+--- PASS: TestVerify (0.00s)
+=== RUN   TestPanelSessionIssueValidateAndRawBearerSeparation
+--- PASS: TestPanelSessionIssueValidateAndRawBearerSeparation (0.00s)
+=== RUN   TestPanelSessionPayloadContainsOnlySafeSessionClaims
+--- PASS: TestPanelSessionPayloadContainsOnlySafeSessionClaims (0.00s)
+=== RUN   TestPanelSessionUsesConfiguredSecretEnvNotTokenPepper
+--- PASS: TestPanelSessionUsesConfiguredSecretEnvNotTokenPepper (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/auth	0.406s
+testing: warning: no tests to run
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/config	0.275s [no tests to run]

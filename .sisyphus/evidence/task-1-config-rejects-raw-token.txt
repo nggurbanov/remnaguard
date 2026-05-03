@@ -1,0 +1,4 @@
+=== RUN   TestValidateRejectsPanelFacadeRawActorCredential
+--- PASS: TestValidateRejectsPanelFacadeRawActorCredential (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/config	0.526s

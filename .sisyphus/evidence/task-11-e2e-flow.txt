@@ -1,0 +1,65 @@
+Task 11 route-level compatibility smoke
+Result: running targeted local httptest smoke suite.
+Coverage asserted by test code: auth bootstrap returns HTTP 200, Telegram callback returns HTTP 200 with a panel_ accessToken, panel Authorization proxies allowed routes through the existing policy/proxy pipeline, denied panel route returns HTTP 403 without upstream calls, unknown panel route fails closed without upstream calls, unsupported auth endpoints return HTTP 403 without upstream calls, safe error redaction holds, and raw rg_ credential compatibility remains enabled.
+
+Command: go test ./internal/server -run targeted panel facade smoke -count=1 -v
+
+=== RUN   TestPanelAuthFacadeStatusAndAuthorizeDoNotProxy
+--- PASS: TestPanelAuthFacadeStatusAndAuthorizeDoNotProxy (0.01s)
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/password_login
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/register
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/passkey_options
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/passkey_verify
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/github_authorize
+=== RUN   TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/github_callback
+--- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy (0.02s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/password_login (0.00s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/register (0.00s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/passkey_options (0.00s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/passkey_verify (0.00s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/github_authorize (0.00s)
+    --- PASS: TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy/github_callback (0.00s)
+=== RUN   TestPanelAuthFacadeTelegramCallbackIssuesPanelSession
+--- PASS: TestPanelAuthFacadeTelegramCallbackIssuesPanelSession (0.00s)
+=== RUN   TestPanelSessionAllowedRouteUsesExistingProxyPipeline
+--- PASS: TestPanelSessionAllowedRouteUsesExistingProxyPipeline (0.00s)
+=== RUN   TestPanelSessionMissingRequiredScopeDoesNotCallUpstream
+--- PASS: TestPanelSessionMissingRequiredScopeDoesNotCallUpstream (0.00s)
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/invalid_token
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unmapped_actor
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unknown_route
+--- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute (0.01s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/invalid_token (0.00s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unmapped_actor (0.00s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unknown_route (0.00s)
+=== RUN   TestPanelSessionUnknownRouteDoesNotCallUpstream
+--- PASS: TestPanelSessionUnknownRouteDoesNotCallUpstream (0.00s)
+=== RUN   TestPanelFacadeStillAcceptsRawRemnaGuardToken
+--- PASS: TestPanelFacadeStillAcceptsRawRemnaGuardToken (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/server	0.231s
+
+Command: go test ./...
+
+?   	github.com/nggurbanov/remnaguard/cmd/remnaguard	[no test files]
+ok  	github.com/nggurbanov/remnaguard/internal/alerts	(cached)
+?   	github.com/nggurbanov/remnaguard/internal/audit	[no test files]
+ok  	github.com/nggurbanov/remnaguard/internal/auth	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/config	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/contract	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/httputil	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/jsonpolicy	(cached)
+?   	github.com/nggurbanov/remnaguard/internal/metrics	[no test files]
+ok  	github.com/nggurbanov/remnaguard/internal/policy	(cached)
+?   	github.com/nggurbanov/remnaguard/internal/proxy	[no test files]
+ok  	github.com/nggurbanov/remnaguard/internal/ratelimit	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/remnawave	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/routes	(cached)
+ok  	github.com/nggurbanov/remnaguard/internal/server	(cached)
+?   	github.com/nggurbanov/remnaguard/internal/testutil	[no test files]
+
+Command: go run ./cmd/remnaguard validate -c configs/remnaguard.panel-facade.example.yaml with fake required env vars
+
+config ok

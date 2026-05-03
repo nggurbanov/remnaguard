@@ -1,0 +1,1 @@
+ok  	github.com/nggurbanov/remnaguard/internal/policy	0.298s

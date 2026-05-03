@@ -1,0 +1,5 @@
+{
+  "response": {
+    "authorizationUrl": "https://restricted.example.com/api/auth/oauth2/callback?provider=telegram&state=telegram-oauth-state"
+  }
+}

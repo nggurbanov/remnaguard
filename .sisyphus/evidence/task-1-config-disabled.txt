@@ -1,0 +1,1 @@
+ok  	github.com/nggurbanov/remnaguard/internal/config	0.296s

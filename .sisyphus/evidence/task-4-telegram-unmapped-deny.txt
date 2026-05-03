@@ -1,0 +1,6 @@
+httptest POST /api/auth/oauth2/callback with valid Telegram hash for unmapped actor
+HTTP 403
+body: denied: panel_auth_denied
+upstream_calls: 0
+actor_id: redacted
+verification: go test ./internal/server ./internal/auth ./internal/config

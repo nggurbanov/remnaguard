@@ -1,0 +1,10 @@
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/invalid_token
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unmapped_actor
+=== RUN   TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unknown_route
+--- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute (0.01s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/invalid_token (0.00s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unmapped_actor (0.00s)
+    --- PASS: TestPanelFacadeErrorsRedactInvalidTokenUnmappedActorAndUnknownRoute/unknown_route (0.00s)
+PASS
+ok  	github.com/nggurbanov/remnaguard/internal/server	0.479s

@@ -1,0 +1,15 @@
+Task 7 denied/no-upstream evidence - 2026-05-03
+
+Command:
+go test ./internal/server -run 'TestPanelSessionMissingRequiredScopeDoesNotCallUpstream|TestPanelSessionUnknownRouteDoesNotCallUpstream|TestRestrictedCannotCallPrivilegedRoute|TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy' -count=1 -v
+
+Observed:
+- TestPanelSessionMissingRequiredScopeDoesNotCallUpstream passed with HTTP 403 and zero upstream calls.
+- TestPanelSessionUnknownRouteDoesNotCallUpstream passed with HTTP 404 and zero upstream calls.
+- TestRestrictedCannotCallPrivilegedRoute passed, confirming existing raw restricted-token fail-closed behavior remains intact.
+- TestPanelAuthFacadeUnsupportedAuthMethodsReturnDisabledJSONAndDoNotProxy passed, confirming /api/auth/* facade routes remain local and are not proxied.
+
+Full verification also ran:
+go test ./...
+
+Result: PASS

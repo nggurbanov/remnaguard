@@ -1,0 +1,11 @@
+Task 9 no-live-network evidence
+Result: PASS - panel facade/auth tests use local fixtures and httptest only; no live Telegram or Remnawave dependency is required.
+PASS: server tests use local httptest upstream/request surfaces (internal/server/server_test.go)
+PASS: panel auth endpoints assert no upstream calls (internal/server/server_test.go)
+PASS: panel proxy denials assert zero upstream calls (internal/server/server_test.go)
+PASS: Telegram fixture is deterministic and fake (internal/server/server_test.go)
+PASS: auth compatibility suite reads local testdata fixtures (internal/server/auth_compat_contract_test.go)
+PASS: session token tests are local package tests (internal/auth/auth_test.go)
+PASS: actor mapping tests are local config-only tests (internal/policy/actor_resolver_test.go)
+Verification command: go test ./... (captured in .sisyphus/evidence/task-9-go-test-all.txt)
+Sensitive material policy: this evidence intentionally lists file/test markers only and omits raw credentials, upstream bearer values, panel session tokens, Telegram hashes, and session secrets.

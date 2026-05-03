@@ -1,0 +1,18 @@
+{
+  "task": "4-telegram-login-success",
+  "surface": "httptest POST /api/auth/oauth2/callback",
+  "provider": "telegram",
+  "status": 200,
+  "response_shape": {
+    "response": {
+      "accessToken": "panel_...redacted"
+    }
+  },
+  "token_assertions": {
+    "starts_with_panel_prefix": true,
+    "starts_with_rg_prefix": false,
+    "contains_root_upstream_or_session_secret": false
+  },
+  "upstream_calls": 0,
+  "verification": "go test ./internal/server ./internal/auth ./internal/config"
+}

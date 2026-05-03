@@ -3,15 +3,21 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +36,16 @@ import (
 	"github.com/nggurbanov/remnaguard/internal/remnawave"
 	"github.com/nggurbanov/remnaguard/internal/routes"
 )
+
+type panelAuditContextKey struct{}
+
+type panelAuditContext struct {
+	ActorType     string
+	ActorID       string
+	DisplayName   string
+	CredentialID  string
+	AuthEventType string
+}
 
 type Runtime struct {
 	state   atomic.Pointer[runtimeState]
@@ -184,12 +200,20 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, req, "", "", "", err.Error(), http.StatusBadRequest)
 			return
 		}
+		markPanelBearerCandidate(cfg, req)
+		if cfg.PanelFacade.Enabled && req.Method == http.MethodGet && path == "/api/auth/oauth2/callback" {
+			r.handlePanelOAuth2CallbackHandoff(w, req, routes.Route{Name: "auth.oauth2.callback", Method: http.MethodGet, Pattern: "/api/auth/oauth2/callback", Support: routes.Privileged, Group: "auth"})
+			return
+		}
 		route, ok := routes.Match(routes.Catalog(cfg.Compatibility.EffectiveVersion()), req.Method, path)
 		if !ok {
 			r.deny(w, req, "", "", "", "unknown_route", http.StatusNotFound)
 			return
 		}
 		route = effectiveRoute(cfg, route)
+		if cfg.PanelFacade.Enabled && r.handlePanelAuthFacade(w, req, cfg, route, path) {
+			return
+		}
 		if !st.versionOK.Load() {
 			r.deny(w, req, route.Name, "", "", "version_guard", http.StatusServiceUnavailable)
 			return
@@ -218,14 +242,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			route.Support = routes.PolicyEnforced
 			route.Scopes = []string{"subscriptions:read", "subscription:read"}
 		}
-		parsed, err := auth.ParseBearer(req.Header.Get("Authorization"))
-		if err != nil {
-			r.deny(w, req, route.Name, "", "", "auth_required", http.StatusUnauthorized)
-			return
-		}
-		tok, cred := cfg.FindCredential(parsed.CredentialID)
-		if tok == nil || cred == nil || !auth.Verify(parsed.Secret, []byte(os.Getenv("REMNAGUARD_TOKEN_PEPPER")), *cred) {
-			r.deny(w, req, route.Name, "", parsed.CredentialID, "invalid_token", http.StatusUnauthorized)
+		tok, cred, authErr := resolveRequestCredential(cfg, req, time.Now())
+		if authErr != nil {
+			r.deny(w, req, route.Name, "", authErr.credentialID, authErr.reason, authErr.status)
 			return
 		}
 		sem := st.limits.perToken.Get(tok.ID)
@@ -273,6 +292,7 @@ func (r *Runtime) apiHandler() http.Handler {
 		}
 		upstreamRes, err := st.proxy.RoundTrip(w, req, path, rawQuery, false)
 		if err != nil {
+			setPanelAuditAuthEventType(req, "upstream")
 			r.deny(w, req, route.Name, tok.ID, cred.ID, "upstream_unavailable", http.StatusBadGateway)
 			return
 		}
@@ -289,8 +309,365 @@ func (r *Runtime) apiHandler() http.Handler {
 			return
 		}
 		st.proxy.WriteResponse(w, upstreamRes, false)
-		r.audit.Emit("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", 0)
+		r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", upstreamRes.StatusCode))
 	})
+}
+
+type requestAuthError struct {
+	reason       string
+	status       int
+	credentialID string
+}
+
+func (e requestAuthError) Error() string { return e.reason }
+
+func resolveRequestCredential(cfg *config.Config, req *http.Request, now time.Time) (*config.TokenPolicy, *config.Credential, *requestAuthError) {
+	authorization := req.Header.Get("Authorization")
+	parsed, err := auth.ParseBearer(authorization)
+	if err == nil {
+		tok, cred := cfg.FindCredential(parsed.CredentialID)
+		if tok == nil || cred == nil || !auth.Verify(parsed.Secret, []byte(os.Getenv("REMNAGUARD_TOKEN_PEPPER")), *cred) {
+			return nil, nil, &requestAuthError{reason: "invalid_token", status: http.StatusUnauthorized, credentialID: parsed.CredentialID}
+		}
+		return tok, cred, nil
+	}
+	if !cfg.PanelFacade.Enabled {
+		return nil, nil, &requestAuthError{reason: "auth_required", status: http.StatusUnauthorized}
+	}
+	panelToken, ok := bearerToken(authorization)
+	if !ok {
+		return nil, nil, &requestAuthError{reason: "auth_required", status: http.StatusUnauthorized}
+	}
+	claims, err := auth.ValidatePanelSession(cfg.PanelFacade, panelToken, now)
+	if err != nil {
+		return nil, nil, &requestAuthError{reason: "invalid_token", status: http.StatusUnauthorized}
+	}
+	actorCfg, actorOK := cfg.PanelFacade.Actors.Telegram[claims.TelegramActorID]
+	tok, cred, err := policy.ResolveTelegramActorCredential(cfg, claims.TelegramActorID)
+	if err != nil {
+		setPanelAuditContext(req, panelAuditContext{ActorType: "telegram", ActorID: claims.TelegramActorID, AuthEventType: "session", CredentialID: actorCfg.CredentialID, DisplayName: actorCfg.DisplayName})
+		return nil, nil, &requestAuthError{reason: "panel_auth_denied", status: http.StatusForbidden}
+	}
+	ctx := panelAuditContext{ActorType: "telegram", ActorID: claims.TelegramActorID, CredentialID: cred.ID, AuthEventType: "session"}
+	if actorOK {
+		ctx.DisplayName = actorCfg.DisplayName
+	}
+	setPanelAuditContext(req, ctx)
+	return tok, cred, nil
+}
+
+func bearerToken(header string) (string, bool) {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return token, token != ""
+}
+
+func markPanelBearerCandidate(cfg *config.Config, req *http.Request) {
+	if cfg == nil || !cfg.PanelFacade.Enabled || req == nil || panelAuditContextFromRequest(req) != nil {
+		return
+	}
+	token, ok := bearerToken(req.Header.Get("Authorization"))
+	if !ok || strings.HasPrefix(token, "rg_") {
+		return
+	}
+	setPanelAuditContext(req, panelAuditContext{AuthEventType: "session"})
+}
+
+func setPanelAuditContext(req *http.Request, ctx panelAuditContext) {
+	if req == nil {
+		return
+	}
+	current := req.Context()
+	if existing, ok := current.Value(panelAuditContextKey{}).(panelAuditContext); ok {
+		ctx = mergePanelAuditContext(existing, ctx)
+	}
+	*req = *req.WithContext(context.WithValue(current, panelAuditContextKey{}, ctx))
+}
+
+func setPanelAuditAuthEventType(req *http.Request, eventType string) {
+	if req == nil || eventType == "" {
+		return
+	}
+	setPanelAuditContext(req, panelAuditContext{AuthEventType: eventType})
+}
+
+func mergePanelAuditContext(base, next panelAuditContext) panelAuditContext {
+	if next.ActorType != "" {
+		base.ActorType = next.ActorType
+	}
+	if next.ActorID != "" {
+		base.ActorID = next.ActorID
+	}
+	if next.DisplayName != "" {
+		base.DisplayName = next.DisplayName
+	}
+	if next.CredentialID != "" {
+		base.CredentialID = next.CredentialID
+	}
+	if next.AuthEventType != "" {
+		base.AuthEventType = next.AuthEventType
+	}
+	return base
+}
+
+func panelAuditContextFromRequest(req *http.Request) *panelAuditContext {
+	if req == nil {
+		return nil
+	}
+	ctx, ok := req.Context().Value(panelAuditContextKey{}).(panelAuditContext)
+	if !ok {
+		return nil
+	}
+	return &ctx
+}
+
+func panelAuditFields(req *http.Request, authEventType string, upstreamStatus int) map[string]any {
+	ctx := panelAuditContextFromRequest(req)
+	if ctx == nil {
+		if upstreamStatus == 0 {
+			return nil
+		}
+		return map[string]any{"upstream_status": upstreamStatus}
+	}
+	fields := make(map[string]any, 7)
+	if ctx.ActorType != "" {
+		fields["actor_type"] = ctx.ActorType
+	}
+	if ctx.ActorID != "" {
+		fields["actor_id"] = ctx.ActorID
+	}
+	if ctx.DisplayName != "" {
+		fields["display_name"] = ctx.DisplayName
+	}
+	if ctx.CredentialID != "" {
+		fields["mapped_credential_id"] = ctx.CredentialID
+	}
+	if authEventType == "" {
+		authEventType = ctx.AuthEventType
+	}
+	if authEventType != "" {
+		fields["auth_event_type"] = authEventType
+	}
+	if upstreamStatus != 0 {
+		fields["upstream_status"] = upstreamStatus
+	}
+	return fields
+}
+
+func (r *Runtime) handlePanelAuthFacade(w http.ResponseWriter, req *http.Request, cfg *config.Config, route routes.Route, path string) bool {
+	if !strings.HasPrefix(path, "/api/auth/") {
+		return false
+	}
+	if req.Method == http.MethodPost {
+		if err := bufferRequestBody(req, cfg.Limits.MaxBodyBytes); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errBodyTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			r.deny(w, req, route.Name, "", "", err.Error(), status)
+			return true
+		}
+	}
+	switch {
+	case req.Method == http.MethodGet && path == "/api/auth/status":
+		writeJSON(w, http.StatusOK, panelAuthStatusResponse())
+		r.audit.EmitRequestFields("panel_auth_status", route.Name, "", "", "ok", req.Method, path, http.StatusOK, map[string]any{"auth_event_type": "status"})
+		return true
+	case req.Method == http.MethodPost && path == "/api/auth/oauth2/authorize":
+		r.handlePanelOAuth2Authorize(w, req, route)
+		return true
+	case req.Method == http.MethodGet && path == "/api/auth/oauth2/callback":
+		r.handlePanelOAuth2CallbackHandoff(w, req, route)
+		return true
+	case req.Method == http.MethodPost && path == "/api/auth/oauth2/callback":
+		r.handlePanelOAuth2Callback(w, req, cfg, route)
+		return true
+	default:
+		r.panelAuthUnsupported(w, req, route, path)
+		return true
+	}
+}
+
+func (r *Runtime) panelAuthUnsupported(w http.ResponseWriter, req *http.Request, route routes.Route, path string) {
+	writeJSON(w, http.StatusForbidden, map[string]any{"path": path, "message": "Forbidden", "errorCode": "A068"})
+	r.audit.EmitRequestFields("request_denied", route.Name, "", "", "panel_auth_unsupported", req.Method, path, http.StatusForbidden, map[string]any{"auth_event_type": "unsupported"})
+}
+
+const panelOAuth2TelegramState = "telegram-oauth-state"
+
+type panelOAuth2AuthorizeRequest struct {
+	Provider string `json:"provider"`
+}
+
+type panelOAuth2CallbackRequest struct {
+	Provider string `json:"provider"`
+	Code     string `json:"code"`
+	State    string `json:"state"`
+}
+
+func (r *Runtime) handlePanelOAuth2Authorize(w http.ResponseWriter, req *http.Request, route routes.Route) {
+	var body panelOAuth2AuthorizeRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Provider != "telegram" {
+		r.panelAuthUnsupported(w, req, route, req.URL.EscapedPath())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"response": map[string]any{"authorizationUrl": "https://restricted.example.com/api/auth/oauth2/callback?provider=telegram&state=" + panelOAuth2TelegramState}})
+	r.audit.EmitRequestFields("panel_auth_authorize", route.Name, "", "", "ok", req.Method, req.URL.EscapedPath(), http.StatusOK, map[string]any{"auth_event_type": "authorize"})
+}
+
+func (r *Runtime) handlePanelOAuth2CallbackHandoff(w http.ResponseWriter, req *http.Request, route routes.Route) {
+	query := req.URL.Query()
+	if query.Get("provider") != "telegram" || query.Get("state") != panelOAuth2TelegramState {
+		r.panelAuthUnsupported(w, req, route, req.URL.EscapedPath())
+		return
+	}
+	code := telegramLoginCodeFromQuery(query)
+	if code == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, panelOAuth2TelegramHandoffHTML)
+		r.audit.EmitRequestFields("panel_auth_handoff", route.Name, "", "", "ok", req.Method, req.URL.EscapedPath(), http.StatusOK, map[string]any{"auth_event_type": "handoff"})
+		return
+	}
+	redirectQuery := url.Values{}
+	redirectQuery.Set("code", code)
+	redirectQuery.Set("state", panelOAuth2TelegramState)
+	http.Redirect(w, req, "/oauth2/callback/telegram?"+redirectQuery.Encode(), http.StatusSeeOther)
+	r.audit.EmitRequestFields("panel_auth_handoff", route.Name, "", "", "ok", req.Method, req.URL.EscapedPath(), http.StatusSeeOther, map[string]any{"auth_event_type": "handoff"})
+}
+
+func telegramLoginCodeFromQuery(query url.Values) string {
+	if query.Get("id") == "" || query.Get("auth_date") == "" || query.Get("hash") == "" {
+		return ""
+	}
+	code := url.Values{}
+	for key, values := range query {
+		switch key {
+		case "provider", "state":
+			continue
+		default:
+			for _, value := range values {
+				code.Add(key, value)
+			}
+		}
+	}
+	return code.Encode()
+}
+
+const panelOAuth2TelegramHandoffHTML = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Telegram OAuth2 Handoff</title></head>
+<body><p>Complete Telegram login to continue to Remnawave.</p></body>
+</html>`
+
+func (r *Runtime) handlePanelOAuth2Callback(w http.ResponseWriter, req *http.Request, cfg *config.Config, route routes.Route) {
+	var body panelOAuth2CallbackRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Provider != "telegram" || strings.TrimSpace(body.Code) == "" {
+		r.panelAuthUnsupported(w, req, route, req.URL.EscapedPath())
+		return
+	}
+	if body.State != panelOAuth2TelegramState {
+		r.deny(w, req, route.Name, "", "", "panel_auth_denied", http.StatusForbidden)
+		return
+	}
+	payload, err := verifyTelegramLoginPayload(body.Code, os.Getenv(cfg.PanelFacade.Telegram.BotTokenEnv), cfg.PanelFacade.Telegram.AuthMaxAge, time.Now())
+	if err != nil {
+		r.audit.EmitRequestFields("panel_auth_callback", route.Name, "", "", err.Error(), req.Method, req.URL.EscapedPath(), http.StatusUnauthorized, map[string]any{"auth_event_type": "callback", "actor_type": "telegram"})
+		r.deny(w, req, route.Name, "", "", err.Error(), http.StatusUnauthorized)
+		return
+	}
+	actorID := payload["id"]
+	actorCfg := cfg.PanelFacade.Actors.Telegram[actorID]
+	_, cred, err := policy.ResolveTelegramActorCredential(cfg, actorID)
+	if err != nil {
+		setPanelAuditContext(req, panelAuditContext{ActorType: "telegram", ActorID: actorID, CredentialID: actorCfg.CredentialID, DisplayName: actorCfg.DisplayName, AuthEventType: "callback"})
+		r.deny(w, req, route.Name, "", "", "panel_auth_denied", http.StatusForbidden)
+		return
+	}
+	setPanelAuditContext(req, panelAuditContext{ActorType: "telegram", ActorID: actorID, DisplayName: actorCfg.DisplayName, CredentialID: cred.ID, AuthEventType: "callback"})
+	token, err := auth.IssuePanelSession(cfg.PanelFacade, actorID, time.Now())
+	if err != nil {
+		r.deny(w, req, route.Name, "", "", "panel_auth_session", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"response": map[string]any{"accessToken": token}})
+	r.audit.EmitRequestFields("panel_auth_callback", route.Name, "", cred.ID, "ok", req.Method, req.URL.EscapedPath(), http.StatusOK, panelAuditFields(req, "callback", 0))
+}
+
+func panelAuthStatusResponse() map[string]any {
+	return map[string]any{"response": map[string]any{
+		"isLoginAllowed":    true,
+		"isRegisterAllowed": false,
+		"authentication": map[string]any{
+			"passkey": map[string]any{"enabled": false},
+			"oauth2": map[string]any{"providers": map[string]any{
+				"telegram": true, "github": false, "pocketid": false, "yandex": false, "keycloak": false, "generic": false,
+			}},
+			"password": map[string]any{"enabled": false},
+		},
+		"branding": map[string]any{"title": "RemnaGuard Restricted Panel", "logoUrl": "https://restricted.example.com/assets/logo.svg"},
+	}}
+}
+
+func verifyTelegramLoginPayload(rawPayload, botToken string, maxAge time.Duration, now time.Time) (map[string]string, error) {
+	values, err := url.ParseQuery(rawPayload)
+	if err != nil {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	fields := make(map[string]string, len(values))
+	for key, vals := range values {
+		if key == "" || len(vals) != 1 || vals[0] == "" {
+			return nil, fmt.Errorf("telegram_auth_invalid")
+		}
+		fields[key] = vals[0]
+	}
+	receivedHash, ok := fields["hash"]
+	if !ok {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	delete(fields, "hash")
+	actorID := strings.TrimSpace(fields["id"])
+	authDateRaw := strings.TrimSpace(fields["auth_date"])
+	if actorID == "" || authDateRaw == "" {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	authUnix, err := strconv.ParseInt(authDateRaw, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	authTime := time.Unix(authUnix, 0)
+	if now.Sub(authTime) > maxAge || authTime.After(now) {
+		return nil, fmt.Errorf("telegram_auth_expired")
+	}
+	received, err := hex.DecodeString(receivedHash)
+	if err != nil || len(received) != sha256.Size {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+fields[key])
+	}
+	secret := sha256.Sum256([]byte(botToken))
+	mac := hmac.New(sha256.New, secret[:])
+	mac.Write([]byte(strings.Join(parts, "\n")))
+	if !hmac.Equal(mac.Sum(nil), received) {
+		return nil, fmt.Errorf("telegram_auth_invalid")
+	}
+	return fields, nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func validateRouteQuery(route routes.Route, rawQuery string) error {
@@ -1016,7 +1393,8 @@ func (r *Runtime) localHandler() http.Handler {
 
 func (r *Runtime) deny(w http.ResponseWriter, req *http.Request, route, tokenID, credentialID, reason string, status int) {
 	method, path := safeRequestContext(req)
-	r.audit.EmitRequest("request_denied", route, tokenID, credentialID, reason, method, path, status)
+	fields := panelAuditFields(req, "", 0)
+	r.audit.EmitRequestFields("request_denied", route, tokenID, credentialID, reason, method, path, status, fields)
 	r.alerts.Notify(alerts.Event{
 		Name:      "request_denied",
 		Method:    method,
@@ -1027,6 +1405,10 @@ func (r *Runtime) deny(w http.ResponseWriter, req *http.Request, route, tokenID,
 		Status:    status,
 		CreatedAt: time.Now().UTC(),
 	})
+	if fields != nil || strings.HasPrefix(path, "/api/auth/") {
+		writeJSON(w, status, map[string]any{"path": path, "message": http.StatusText(status), "errorCode": "REMNAGUARD_DENIED", "reason": reason})
+		return
+	}
 	http.Error(w, fmt.Sprintf("denied: %s", reason), status)
 }
 

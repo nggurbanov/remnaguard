@@ -1,0 +1,28 @@
+{
+  "response": {
+    "isLoginAllowed": true,
+    "isRegisterAllowed": false,
+    "authentication": {
+      "passkey": {
+        "enabled": false
+      },
+      "oauth2": {
+        "providers": {
+          "telegram": true,
+          "github": false,
+          "pocketid": false,
+          "yandex": false,
+          "keycloak": false,
+          "generic": false
+        }
+      },
+      "password": {
+        "enabled": false
+      }
+    },
+    "branding": {
+      "title": "RemnaGuard Restricted Panel",
+      "logoUrl": "https://restricted.example.com/assets/logo.svg"
+    }
+  }
+}

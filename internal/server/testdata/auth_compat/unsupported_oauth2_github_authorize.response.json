@@ -1,0 +1,5 @@
+{
+  "path": "/api/auth/oauth2/authorize",
+  "message": "Forbidden",
+  "errorCode": "A068"
+}

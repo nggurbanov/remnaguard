@@ -1,0 +1,5 @@
+{
+  "path": "/api/auth/passkey/authentication/verify",
+  "message": "Forbidden",
+  "errorCode": "A068"
+}

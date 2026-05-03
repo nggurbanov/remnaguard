@@ -1,0 +1,20 @@
+Evidence: Test suite status after docs/config additions
+=========================================================
+
+Command: go test ./...
+Result:  all packages pass (cached results confirm no regressions)
+
+Packages tested:
+- github.com/nggurbanov/remnaguard/internal/alerts
+- github.com/nggurbanov/remnaguard/internal/auth
+- github.com/nggurbanov/remnaguard/internal/config
+- github.com/nggurbanov/remnaguard/internal/contract
+- github.com/nggurbanov/remnaguard/internal/httputil
+- github.com/nggurbanov/remnaguard/internal/jsonpolicy
+- github.com/nggurbanov/remnaguard/internal/policy
+- github.com/nggurbanov/remnaguard/internal/ratelimit
+- github.com/nggurbanov/remnaguard/internal/remnawave
+- github.com/nggurbanov/remnaguard/internal/routes
+- github.com/nggurbanov/remnaguard/internal/server
+
+No Go implementation or test files were modified.

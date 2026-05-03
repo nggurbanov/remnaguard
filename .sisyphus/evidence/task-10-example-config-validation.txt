@@ -1,0 +1,20 @@
+Evidence: Example config validation with fake required env vars
+================================================================
+
+Command:
+  REMNAWAVE_ROOT_BEARER=<redacted-a> \
+  REMNAGUARD_TOKEN_PEPPER=<redacted-b> \
+  PANEL_FACADE_SESSION_SECRET=<redacted-c> \
+  PANEL_FACADE_TELEGRAM_BOT_TOKEN=<redacted-d> \
+  ./remnaguard validate -c configs/remnaguard.panel-facade.example.yaml
+
+Output:
+  config ok
+
+This confirms the example config passes all validation rules, including:
+- upstream bearer source resolves to non-empty value
+- panel_facade.session.secret_env resolves to non-empty value
+- panel_facade.telegram.bot_token_env resolves to non-empty value
+- actor credential_id references an existing configured credential
+- actor credential_id does not start with rg_
+- all other structural and policy validations pass

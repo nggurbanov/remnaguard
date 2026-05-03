@@ -1,0 +1,121 @@
+{
+  "active_plan": "/Users/tyrell/Projects/remnaguard/.sisyphus/plans/remnawave-rbac-auth-facade.md",
+  "started_at": "2026-05-03T19:11:14.590Z",
+  "session_ids": [
+    "ses_210bf82d7ffexwBdRGEK6ZTte1",
+    "ses_210be7cd0ffe3hBQGW1F4wy1Cj",
+    "ses_210be7cc7ffe1nH92Fzohb6jLd",
+    "ses_210be7cc1ffeOgkOcdbg6CkO26",
+    "ses_210be7c89ffeJeBviweydqfkwZ"
+  ],
+  "session_origins": {
+    "ses_210bf82d7ffexwBdRGEK6ZTte1": "direct",
+    "ses_210be7cd0ffe3hBQGW1F4wy1Cj": "appended",
+    "ses_210be7cc7ffe1nH92Fzohb6jLd": "appended",
+    "ses_210be7cc1ffeOgkOcdbg6CkO26": "appended",
+    "ses_210be7c89ffeJeBviweydqfkwZ": "appended"
+  },
+  "plan_name": "remnawave-rbac-auth-facade",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Add opt-in panel facade configuration",
+      "session_id": "ses_210b97728ffeJ1l5KL1rxwuFCv",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:21:07.084Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Implement distinct panel session token design",
+      "session_id": "ses_210b4d3c7ffe6Z6daKqIZ0tUze",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:25:16.118Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Implement Telegram-only auth facade endpoints",
+      "session_id": "ses_210b1b144ffeUpYkmMC06NtlWv",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:32:53.612Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Resolve actor mapping to existing credentials",
+      "session_id": "ses_210aaa9a9ffe5LjiVr3XxZIyM3",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:36:02.465Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Add compatible unsupported-auth behavior",
+      "session_id": "ses_210a7d10fffeUm16XKiH2ODz06",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:39:46.191Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Integrate panel sessions with existing proxy/policy pipeline",
+      "session_id": "ses_210a42dddfferaBPWmzH99K7KM",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:44:48.290Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "Extend audit and safe error handling for facade mode",
+      "session_id": "ses_2109f9552ffe4EG57VCCjcvLAX",
+      "agent": "Sisyphus-Junior",
+      "category": "business-logic",
+      "updated_at": "2026-05-03T19:49:53.542Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "Add tests-after integration and contract suite",
+      "session_id": "ses_2109aef04ffegXGrJIwsPz96qb",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-03T19:54:24.792Z"
+    },
+    "todo:10": {
+      "task_key": "todo:10",
+      "task_label": "10",
+      "task_title": "Add deployment example and operator docs",
+      "session_id": "ses_210968ebeffeiODBORSquN0sCF",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-05-03T20:00:38.353Z"
+    },
+    "todo:11": {
+      "task_key": "todo:11",
+      "task_label": "11",
+      "task_title": "Run compatibility smoke and hardening pass",
+      "session_id": "ses_21090ac10ffe2zktOzlkBmcc0y",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-03T20:07:11.516Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "ses_2108b5a45ffen8V0ioCZ5W1JsE",
+      "agent": "oracle",
+      "category": "",
+      "updated_at": "2026-05-03T20:18:51.714Z"
+    }
+  }
+}

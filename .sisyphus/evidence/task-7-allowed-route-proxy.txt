@@ -1,0 +1,17 @@
+Task 7 allowed route proxy evidence - 2026-05-03
+
+Command:
+go test ./internal/server -run 'TestPanelSessionAllowedRouteUsesExistingProxyPipeline|TestPanelFacadeStillAcceptsRawRemnaGuardToken|TestPrivilegedRepresentativeRoutesProxy' -count=1 -v
+
+Observed:
+- TestPanelSessionAllowedRouteUsesExistingProxyPipeline passed.
+- The httptest upstream received exactly one call for GET /api/users/by-telegram-id/1000000900000000.
+- The upstream Authorization header was the configured upstream root bearer.
+- The upstream did not receive the panel session token or protected/forwarded headers checked by the test.
+- TestPanelFacadeStillAcceptsRawRemnaGuardToken passed, confirming enabled panel facade still accepts raw rg_ credentials through the same proxy path.
+- TestPrivilegedRepresentativeRoutesProxy passed, confirming existing raw token proxy behavior remains intact.
+
+Full verification also ran:
+go test ./...
+
+Result: PASS

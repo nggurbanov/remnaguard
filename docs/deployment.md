@@ -49,6 +49,106 @@ location /api/ {
 
 Do not add path rewrites, URI decoding, method override headers, or public routes to the local listener.
 
+## Restricted Panel Facade
+
+The panel facade is opt-in and disabled by default. When enabled, it provides a restricted browser login path for the Remnawave panel using Telegram OAuth only. It is not a replacement for the full admin panel. It does not require forking the Remnawave frontend.
+
+### Topology
+
+```
+admin.example.com          -> original Remnawave frontend and backend
+restricted.example.com     -> Remnawave frontend static app (unchanged)
+restricted.example.com/api/* -> RemnaGuard panel facade
+RemnaGuard                 -> original Remnawave backend with server-held root/API bearer
+```
+
+The facade intercepts `/api/auth/*` locally. All other `/api/*` requests from the restricted panel are proxied through the normal RemnaGuard catalog, policy, and audit path to the upstream Remnawave backend.
+
+### Required Environment Variables
+
+When `panel_facade.enabled` is true, the following environment variables must be set on the RemnaGuard server process. Do not place these values in browser storage, frontend environment variables, or public config.
+
+- `REMNAWAVE_ROOT_BEARER` — the upstream API bearer RemnaGuard uses to call the original Remnawave backend.
+- `REMNAGUARD_TOKEN_PEPPER` — the secret used to verify raw `rg_...` API tokens.
+- `PANEL_FACADE_SESSION_SECRET` — the signing key for browser session tokens issued by the facade.
+- `PANEL_FACADE_TELEGRAM_BOT_TOKEN` — the Telegram bot token used to verify Login Widget callbacks.
+
+Use separate secrets for each role. Rotate them independently. The session secret and Telegram bot token must not be reused as the token pepper or upstream bearer.
+
+### Actor Mapping
+
+Actor mappings connect verified Telegram IDs to existing stored RemnaGuard credentials. The `credential_id` in an actor mapping must reference a credential already defined under `tokens`. Raw `rg_...` values are rejected.
+
+Example:
+```yaml
+tokens:
+  - id: panel-operator
+    scopes:
+      - users:read
+      - subscriptions:read
+    credentials:
+      - id: panel-operator-credential
+        hmac_sha256: "replace-with-remnaguard-token-generate-digest"
+
+panel_facade:
+  enabled: true
+  session:
+    issuer: "remnaguard-panel"
+    audience: "remnaguard-panel"
+    token_ttl: 24h
+    secret_env: "PANEL_FACADE_SESSION_SECRET"
+  telegram:
+    bot_token_env: "PANEL_FACADE_TELEGRAM_BOT_TOKEN"
+    auth_max_age: 5m
+  actors:
+    telegram:
+      "123456789":
+        credential_id: "panel-operator-credential"
+        display_name: "Example Operator"
+```
+
+### Reverse Proxy Routing
+
+Route `/api/*` from the restricted panel domain to the RemnaGuard API listener. Route the admin panel domain directly to the original Remnawave backend. Do not mix the two domains on the same upstream path.
+
+Nginx example for the restricted panel:
+```nginx
+server {
+  listen 443 ssl;
+  server_name restricted.example.com;
+
+  location / {
+    # Remnawave frontend static app
+    root /var/www/remnawave-panel;
+    try_files $uri $uri/ /index.html;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8080$request_uri;
+    proxy_set_header Host $host;
+    proxy_http_version 1.1;
+  }
+}
+```
+
+### Unsupported Authentication Methods
+
+The panel facade supports only Telegram OAuth in the current release. Password login, registration, passkey authentication, and non-Telegram OAuth providers are disabled. Requests to these endpoints return a Remnawave-style 403 JSON response.
+
+### Expected UI Behavior
+
+Because the facade does not fork the Remnawave frontend, the unchanged UI may still render controls for disabled features. When a user tries to use them, the backend returns 403 and the UI shows an error. This is expected. A future frontend fork could hide disabled controls for a smoother experience, but it is not required for enforcement.
+
+### Secret Placement and Rotation
+
+- Store all secrets in environment variables or a secrets manager, never in YAML files.
+- The browser receives only a `panel_` session token after successful Telegram login. It never receives raw `rg_...` tokens, the upstream root bearer, the Telegram bot token, or the session signing secret.
+- Rotate the session secret by changing the environment variable and restarting RemnaGuard. Existing browser sessions will expire naturally.
+- Rotate the Telegram bot token through the BotFather, then update the environment variable and restart.
+
+### Example Config
+
+A complete example is available at `configs/remnaguard.panel-facade.example.yaml`.
 ## systemd
 
 ```ini

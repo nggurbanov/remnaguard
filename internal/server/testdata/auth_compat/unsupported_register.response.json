@@ -1,0 +1,5 @@
+{
+  "path": "/api/auth/register",
+  "message": "Forbidden",
+  "errorCode": "A068"
+}
