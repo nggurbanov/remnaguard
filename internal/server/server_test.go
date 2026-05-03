@@ -552,6 +552,60 @@ func TestTokenSpecificAllowedRequestFields(t *testing.T) {
 	}
 }
 
+func TestRestrictedWriteDeniesTelegramIDAliasBeforeUpstream(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("denied telegram_id alias must not reach upstream")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"users:create"}
+	cfg.Tokens[0].Constraints.TelegramIDRanges = []config.IDRange{{Min: 1, Max: 100}}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"restricted-a","telegram_id":999}`))
+	req.RequestURI = "/api/users"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected telegram_id denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRestrictedWriteDeniesExternalSquadAliasBeforeUpstream(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("denied external_squad_uuid alias must not reach upstream")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"users:create"}
+	cfg.Tokens[0].Constraints.AllowedExternalSquads = []string{"external-a"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"restricted-a","external_squad_uuid":"external-b"}`))
+	req.RequestURI = "/api/users"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected external_squad_uuid denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUserListResponseIsFiltered(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
