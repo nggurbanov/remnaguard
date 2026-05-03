@@ -266,6 +266,9 @@ func (r *Runtime) apiHandler() http.Handler {
 		}
 		dec := policy.Decide(tok, route)
 		if !dec.Allow && (panelAuditContextFromRequest(req) != nil || !cfg.Report.Enabled || !cfg.Report.UnsafeReportProxy) {
+			if r.handlePanelPolicyDeny(w, req, route, tok, cred, dec.Reason) {
+				return
+			}
 			r.deny(w, req, route.Name, tok.ID, cred.ID, dec.Reason, http.StatusForbidden)
 			return
 		}
@@ -289,6 +292,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			defer unlock()
 		}
 		if err := r.preflight(req, st, route, path, tok); err != nil {
+			if r.handlePanelPolicyDeny(w, req, route, tok, cred, err.Error()) {
+				return
+			}
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -296,6 +302,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			status := http.StatusBadRequest
 			if errors.Is(err, errBodyTooLarge) {
 				status = http.StatusRequestEntityTooLarge
+			}
+			if r.handlePanelPolicyDeny(w, req, route, tok, cred, err.Error()) {
+				return
 			}
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), status)
 			return
@@ -310,6 +319,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			return
 		}
 		if err := enforceResponsePolicy(route, tok, upstreamRes); err != nil {
+			if r.handlePanelPolicyDeny(w, req, route, tok, cred, err.Error()) {
+				return
+			}
 			r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -945,6 +957,72 @@ func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request
 		return true
 	default:
 		return false
+	}
+}
+
+func (r *Runtime) handlePanelPolicyDeny(w http.ResponseWriter, req *http.Request, route routes.Route, tok *config.TokenPolicy, cred *config.Credential, reason string) bool {
+	if panelAuditContextFromRequest(req) == nil || tok == nil || cred == nil {
+		return false
+	}
+	method, path := safeRequestContext(req)
+	status := panelPolicyDenyStatus(req.Method, route, path)
+	r.audit.EmitRequestFields("request_denied", route.Name, tok.ID, cred.ID, reason, method, path, status, panelAuditFields(req, "policy_deny", 0))
+	disablePanelCacheHeaders(w.Header())
+	if req.Method == http.MethodGet {
+		writeJSON(w, status, panelSafeReadDenyBody(route, path, status, reason))
+		return true
+	}
+	writeJSON(w, status, map[string]any{"path": path, "message": "Action is not allowed by this panel role", "errorCode": "REMNAGUARD_POLICY_DENIED", "reason": reason})
+	return true
+}
+
+func panelPolicyDenyStatus(method string, route routes.Route, path string) int {
+	if method != http.MethodGet {
+		return http.StatusUnprocessableEntity
+	}
+	if isPanelListLikeRead(route, path) {
+		return http.StatusOK
+	}
+	return http.StatusNotFound
+}
+
+func isPanelListLikeRead(route routes.Route, path string) bool {
+	if strings.HasSuffix(path, "/tags") || strings.HasSuffix(path, "/inbounds") {
+		return true
+	}
+	if strings.Contains(route.Pattern, "{") {
+		return false
+	}
+	return true
+}
+
+func panelSafeReadDenyBody(route routes.Route, path string, status int, reason string) map[string]any {
+	if status == http.StatusNotFound {
+		return map[string]any{"path": path, "message": http.StatusText(http.StatusNotFound), "errorCode": "REMNAGUARD_NOT_FOUND", "reason": reason}
+	}
+	return map[string]any{"response": panelEmptyResponse(route, path)}
+}
+
+func panelEmptyResponse(route routes.Route, path string) any {
+	if strings.HasSuffix(path, "/tags") {
+		return map[string]any{"tags": []any{}}
+	}
+	if strings.HasSuffix(path, "/inbounds") {
+		return map[string]any{"inbounds": []any{}}
+	}
+	switch route.Group {
+	case "users":
+		return map[string]any{"users": []any{}, "total": 0}
+	case "internal-squads":
+		return map[string]any{"internalSquads": []any{}, "total": 0}
+	case "external-squads":
+		return map[string]any{"externalSquads": []any{}, "total": 0}
+	case "subscription-page-configs":
+		return map[string]any{"configs": []any{}, "total": 0}
+	case "system", "bandwidth-stats", "metadata":
+		return map[string]any{}
+	default:
+		return []any{}
 	}
 }
 

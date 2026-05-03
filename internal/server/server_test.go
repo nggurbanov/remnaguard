@@ -1280,11 +1280,14 @@ func TestPanelSessionMissingRequiredScopeDoesNotCallUpstream(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+panelToken)
 	rec := httptest.NewRecorder()
 	rt.apiHandler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected missing scope denial, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected UI-safe empty read denial, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if upstreamCalls != 0 {
 		t.Fatalf("denied panel session request reached upstream %d time(s)", upstreamCalls)
+	}
+	if !strings.Contains(rec.Body.String(), `"internalSquads":[]`) || !strings.Contains(rec.Body.String(), `"total":0`) {
+		t.Fatalf("unexpected safe-deny body: %s", rec.Body.String())
 	}
 	events := decodeAuditEvents(t, auditOut.String())
 	last := events[len(events)-1]
@@ -1313,11 +1316,54 @@ func TestPanelSessionMissingRequiredScopeIgnoresUnsafeReportProxy(t *testing.T) 
 	req.Header.Set("Authorization", "Bearer "+panelToken)
 	rec := httptest.NewRecorder()
 	rt.apiHandler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected missing scope denial, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected UI-safe empty read denial, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if upstreamCalls != 0 {
 		t.Fatalf("unsafe report proxy let denied panel session reach upstream %d time(s)", upstreamCalls)
+	}
+}
+
+func TestPanelSessionDeniedMutationReturnsUnprocessable(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/users/11111111-1111-4111-8111-111111111111/actions/disable", nil)
+	req.RequestURI = "/api/users/11111111-1111-4111-8111-111111111111/actions/disable"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected UI-safe mutation denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("denied panel mutation reached upstream %d time(s)", upstreamCalls)
+	}
+	if !strings.Contains(rec.Body.String(), "REMNAGUARD_POLICY_DENIED") {
+		t.Fatalf("unexpected mutation denial body: %s", rec.Body.String())
+	}
+}
+
+func TestPanelSessionDeniedDetailReturnsNotFound(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads/11111111-1111-4111-8111-111111111111", nil)
+	req.RequestURI = "/api/internal-squads/11111111-1111-4111-8111-111111111111"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected UI-safe detail denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("denied panel detail reached upstream %d time(s)", upstreamCalls)
 	}
 }
 
