@@ -764,7 +764,7 @@ func TestSubscriptionPageConfigListIsFiltered(t *testing.T) {
 	allowed := "11111111-1111-4111-8111-111111111111"
 	foreign := "22222222-2222-4222-8222-222222222222"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RequestURI() != "/api/subscription-page-configs/" {
+		if r.URL.RequestURI() != "/api/subscription-page-configs" {
 			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1161,6 +1161,51 @@ func TestPanelSessionFacadesAdminJWTOnlySettingsReads(t *testing.T) {
 	}
 	if upstreamCalls != 0 {
 		t.Fatalf("settings facade should not call upstream, got %d calls", upstreamCalls)
+	}
+}
+
+func TestPanelSessionFacadeReadsAcceptTrailingSlash(t *testing.T) {
+	upstreamCalls := 0
+	rt := newPanelFacadeProxyRuntime(t, func(http.ResponseWriter, *http.Request) {
+		upstreamCalls++
+	})
+	rt.state.Load().cfg.Tokens[0].Scopes = []string{"remnawave:*"}
+	panelToken := issueTestPanelSession(t, rt)
+
+	for _, path := range []string{"/api/remnawave-settings/", "/api/tokens/"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RequestURI = path
+		req.Header.Set("Authorization", "Bearer "+panelToken)
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s got %d want 200: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("trailing-slash settings facade should not call upstream, got %d calls", upstreamCalls)
+	}
+}
+
+func TestPanelSessionProxiesTrailingSlashAsCanonicalPath(t *testing.T) {
+	var upstreamPath string
+	rt := newPanelFacadeProxyRuntime(t, func(w http.ResponseWriter, req *http.Request) {
+		upstreamPath = req.URL.Path
+		_, _ = w.Write([]byte(`{"response":[]}`))
+	})
+	rt.state.Load().cfg.Tokens[0].Scopes = []string{"squads:read"}
+	panelToken := issueTestPanelSession(t, rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal-squads/", nil)
+	req.RequestURI = "/api/internal-squads/"
+	req.Header.Set("Authorization", "Bearer "+panelToken)
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected trailing-slash panel request to proxy, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamPath != "/api/internal-squads" {
+		t.Fatalf("upstream path = %q, want canonical path", upstreamPath)
 	}
 }
 

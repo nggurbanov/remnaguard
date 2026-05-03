@@ -208,6 +208,9 @@ func (r *Runtime) apiHandler() http.Handler {
 			r.deny(w, req, "", "", "", err.Error(), http.StatusBadRequest)
 			return
 		}
+		if path != "/api/" && strings.HasSuffix(path, "/") {
+			path = strings.TrimRight(path, "/")
+		}
 		markPanelBearerCandidate(cfg, req)
 		route, ok := routes.Match(routes.Catalog(cfg.Compatibility.EffectiveVersion()), req.Method, path)
 		if !ok {
