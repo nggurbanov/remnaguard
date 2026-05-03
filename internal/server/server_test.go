@@ -642,16 +642,13 @@ func TestSquadDetailResponseIsRedacted(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedSubscriptionRouteWorksWhenPublicDisabled(t *testing.T) {
+func TestAuthenticatedSubscriptionRouteDeniedWhenOutsideOwnership(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer root" {
 			t.Fatalf("unexpected upstream auth %q", r.Header.Get("Authorization"))
 		}
-		if r.URL.RequestURI() != "/api/sub/abcdef/info" {
-			t.Fatalf("unexpected upstream uri %q", r.URL.RequestURI())
-		}
-		_, _ = w.Write([]byte(`{"response":{"username":"restricted-a"}}`))
+		_, _ = w.Write([]byte(`{"response":{"username":"foreign-user"}}`))
 	}))
 	defer upstream.Close()
 
@@ -667,8 +664,8 @@ func TestAuthenticatedSubscriptionRouteWorksWhenPublicDisabled(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer rg_cred.secret")
 	rec := httptest.NewRecorder()
 	rt.apiHandler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
