@@ -649,7 +649,7 @@ func TestSquadListResponseIsFiltered(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"response":{"total":2,"internalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","rawInbound":{"privateKey":"secret"}},{"uuid":"22222222-2222-4222-8222-222222222222","name":"B","rawInbound":{"privateKey":"secret"}}]}}`))
+		_, _ = w.Write([]byte(`{"response":{"total":2,"internalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","viewPosition":1,"info":{"membersCount":2,"inboundsCount":3},"inbounds":[{"tag":"node"}],"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z","rawInbound":{"privateKey":"secret"}},{"uuid":"22222222-2222-4222-8222-222222222222","name":"B","viewPosition":2,"info":{"membersCount":1,"inboundsCount":1},"inbounds":[],"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z","rawInbound":{"privateKey":"secret"}}]}}`))
 	}))
 	defer upstream.Close()
 	cfg := testConfig(upstream.URL, "secret")
@@ -672,6 +672,9 @@ func TestSquadListResponseIsFiltered(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "rawInbound") || strings.Contains(rec.Body.String(), "privateKey") {
 		t.Fatalf("sensitive squad fields were not redacted: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"info":{"inboundsCount":3,"membersCount":2}`) || !strings.Contains(rec.Body.String(), `"inbounds":[{"tag":"node"}]`) {
+		t.Fatalf("frontend-required squad list fields were not preserved: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `"total":1`) {
 		t.Fatalf("expected redacted total, got %s", rec.Body.String())

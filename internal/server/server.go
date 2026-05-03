@@ -1423,24 +1423,24 @@ func filterResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *prox
 	case "squad.internal.list":
 		return filterJSONList(res, func(item any) bool {
 			if len(tok.Constraints.AllowedInternalSquads) == 0 {
-				sanitizeSquadObject(item)
+				sanitizeSquadListObject(item)
 				return true
 			}
 			allowed := contains(tok.Constraints.AllowedInternalSquads, objectUUID(item))
 			if allowed {
-				sanitizeSquadObject(item)
+				sanitizeSquadListObject(item)
 			}
 			return allowed
 		})
 	case "squad.external.list":
 		return filterJSONList(res, func(item any) bool {
 			if len(tok.Constraints.AllowedExternalSquads) == 0 {
-				sanitizeSquadObject(item)
+				sanitizeSquadListObject(item)
 				return true
 			}
 			allowed := contains(tok.Constraints.AllowedExternalSquads, objectUUID(item))
 			if allowed {
-				sanitizeSquadObject(item)
+				sanitizeSquadListObject(item)
 			}
 			return allowed
 		})
@@ -1565,6 +1565,17 @@ func sanitizeSquadObject(item any) {
 			delete(obj, key)
 		}
 	}
+}
+
+func sanitizeSquadListObject(item any) {
+	obj, ok := item.(map[string]any)
+	if !ok {
+		return
+	}
+	delete(obj, "rawInbound")
+	delete(obj, "rawInbounds")
+	delete(obj, "raw_inbound")
+	delete(obj, "raw_inbounds")
 }
 
 func filterJSONList(res *proxy.Response, keep func(any) bool) error {
