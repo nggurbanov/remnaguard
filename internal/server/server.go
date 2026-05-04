@@ -935,9 +935,6 @@ func validateRouteQuery(route routes.Route, rawQuery string) error {
 }
 
 func validateRequestQuery(req *http.Request, route routes.Route, rawQuery string) error {
-	if panelAuditContextFromRequest(req) != nil {
-		return rghttp.ValidateQueryStructural(rawQuery)
-	}
 	return validateRouteQuery(route, rawQuery)
 }
 
@@ -1196,6 +1193,18 @@ func panelTelegramActorIDs(cfg *config.Config) []string {
 }
 
 func effectiveRoute(cfg *config.Config, route routes.Route) routes.Route {
+	if route.Method == http.MethodGet && safeReadAllRoute(route) {
+		wasPrivileged := route.Support == routes.Privileged
+		if wasPrivileged {
+			route.Support = routes.PolicyEnforced
+			if len(route.QueryAllowed) == 0 {
+				route.QueryAllowed = safeReadAllQueryFields()
+			}
+		}
+		if route.Support == routes.PolicyEnforced && !contains(route.Scopes, "read:*") {
+			route.Scopes = append(route.Scopes, "read:*")
+		}
+	}
 	if !cfg.WriteSafety.RestrictedWritesEnabled() || !cfg.WriteSafety.SingleWriter {
 		return route
 	}
@@ -1203,22 +1212,133 @@ func effectiveRoute(cfg *config.Config, route routes.Route) routes.Route {
 	case "user.create":
 		route.Support = routes.PolicyEnforced
 		route.Scopes = []string{"users:create", "user:write"}
+		route.BodyObject = true
+		route.BodyLimit = 65536
+		route.AllowedFields = userCreateFields()
 	case "user.update":
 		route.Support = routes.PolicyEnforced
-		route.Scopes = []string{"users:update", "user:write"}
+		route.Scopes = []string{"users:update", "users:write", "user:write"}
+		route.BodyObject = true
+		route.BodyLimit = 65536
+		route.AllowedFields = restrictedUserUpdateFields()
 	case "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke":
 		route.Support = routes.PolicyEnforced
-		route.Scopes = []string{"users:action", "user:action"}
+		route.Scopes = []string{"users:action", "users:write", "user:action"}
 	case "hwid.create", "hwid.delete", "hwid.delete_all":
 		route.Support = routes.PolicyEnforced
 		route.Scopes = []string{"hwid:write"}
+	case "post.config_profiles", "patch.config_profiles":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"config-profiles:write"}
+		route.BodyObject = true
+		route.BodyLimit = cfg.Limits.MaxBodyBytes
+	case "post.hosts", "patch.hosts":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"hosts:write"}
+		route.BodyObject = true
+		route.BodyLimit = cfg.Limits.MaxBodyBytes
+	case "post.nodes", "patch.nodes", "post.nodes.uuid.actions.disable", "post.nodes.uuid.actions.enable", "post.nodes.uuid.actions.restart", "post.nodes.uuid.actions.reset_traffic":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"nodes:write"}
+		if route.Method != http.MethodPost || !strings.Contains(route.Pattern, "/actions/") {
+			route.BodyObject = true
+			route.BodyLimit = cfg.Limits.MaxBodyBytes
+		}
+	case "patch.subscription_templates":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"subscription-templates:write"}
+		route.BodyObject = true
+		route.BodyLimit = cfg.Limits.MaxBodyBytes
+	case "patch.internal_squads":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"internal-squads:write"}
+		route.BodyObject = true
+		route.BodyLimit = cfg.Limits.MaxBodyBytes
+	case "patch.external_squads":
+		route.Support = routes.PolicyEnforced
+		route.Scopes = []string{"external-squads:write"}
+		route.BodyObject = true
+		route.BodyLimit = cfg.Limits.MaxBodyBytes
 	}
 	return route
 }
 
+func safeReadAllQueryFields() []string {
+	return []string{"page", "size", "limit", "offset", "start", "search", "username", "email", "tag", "tags", "status", "sort", "order", "sorting", "filters", "filterModes", "includeHwid", "includeSubscription", "includeStats", "includeUsers", "tz"}
+}
+
+func safeReadAllRoute(route routes.Route) bool {
+	return safeReadAllRoutes()[route.Name]
+}
+
+func safeReadAllRoutes() map[string]bool {
+	return map[string]bool{
+		"user.read.uuid":                              true,
+		"user.read.username":                          true,
+		"user.read.telegram":                          true,
+		"user.list":                                   true,
+		"get.users.by_email.email":                    true,
+		"get.users.by_id.id":                          true,
+		"get.users.by_short_uuid.shortuuid":           true,
+		"get.users.by_tag.tag":                        true,
+		"get.users.tags":                              true,
+		"get.users.uuid.accessible_nodes":             true,
+		"hwid.list":                                   true,
+		"get.hwid.devices":                            true,
+		"get.hwid.devices.stats":                      true,
+		"get.hwid.devices.top_users":                  true,
+		"squad.internal.read":                         true,
+		"squad.external.read":                         true,
+		"squad.internal.list":                         true,
+		"squad.external.list":                         true,
+		"get.internal_squads.uuid.accessible_nodes":   true,
+		"get.config_profiles":                         true,
+		"get.config_profiles.inbounds":                true,
+		"get.config_profiles.uuid":                    true,
+		"get.config_profiles.uuid.inbounds":           true,
+		"get.hosts":                                   true,
+		"get.hosts.tags":                              true,
+		"get.hosts.uuid":                              true,
+		"get.nodes":                                   true,
+		"get.nodes.tags":                              true,
+		"get.nodes.uuid":                              true,
+		"subscription_page_config.list":               true,
+		"subscription_page_config.read":               true,
+		"subscription.subpage_config":                 true,
+		"get.subscription_templates":                  true,
+		"get.subscription_templates.uuid":             true,
+		"get.subscriptions":                           true,
+		"get.subscriptions.by_short_uuid.shortuuid":   true,
+		"get.subscriptions.by_username.username":      true,
+		"get.subscriptions.by_uuid.uuid":              true,
+		"system.health":                               true,
+		"system.metadata":                             true,
+		"system.bandwidth":                            true,
+		"system.stats":                                true,
+		"get.system.nodes.metrics":                    true,
+		"get.system.stats.nodes":                      true,
+		"get.system.stats.recap":                      true,
+		"get.bandwidth_stats.nodes":                   true,
+		"get.bandwidth_stats.nodes.uuid.users":        true,
+		"get.bandwidth_stats.nodes.uuid.users.legacy": true,
+		"get.bandwidth_stats.users.uuid":              true,
+		"get.bandwidth_stats.users.uuid.legacy":       true,
+		"get.metadata.node.uuid":                      true,
+		"get.metadata.user.uuid":                      true,
+	}
+}
+
+func restrictedUserUpdateFields() []string {
+	return []string{"username", "uuid", "status", "expireAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "telegram_id", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "externalSquadUuid", "external_squad_uuid", "subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid"}
+}
+
+func userCreateFields() []string {
+	return []string{"username", "status", "shortUuid", "short_uuid", "trojanPassword", "vlessUuid", "ssPassword", "expireAt", "createdAt", "lastTrafficResetAt", "trafficLimitBytes", "trafficLimitStrategy", "telegramId", "telegram_id", "email", "description", "tag", "activeInternalSquads", "hwidDeviceLimit", "uuid", "externalSquadUuid", "external_squad_uuid", "subscriptionPageConfigUuid", "subscriptionPageConfigUUID", "subscription_page_config_uuid"}
+}
+
 func isRestrictedWrite(route routes.Route) bool {
 	switch route.Name {
-	case "user.create", "user.update", "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke", "hwid.create", "hwid.delete", "hwid.delete_all":
+	case "user.create", "user.update", "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke", "hwid.create", "hwid.delete", "hwid.delete_all", "post.config_profiles", "patch.config_profiles", "post.hosts", "patch.hosts", "post.nodes", "patch.nodes", "post.nodes.uuid.actions.disable", "post.nodes.uuid.actions.enable", "post.nodes.uuid.actions.restart", "post.nodes.uuid.actions.reset_traffic", "patch.subscription_templates", "patch.internal_squads", "patch.external_squads":
 		return true
 	default:
 		return false
@@ -1284,8 +1404,10 @@ func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Rout
 	if err != nil {
 		return err
 	}
-	if err := jsonpolicy.ValidateFields(obj, route.AllowedFields); err != nil {
-		return err
+	if len(route.AllowedFields) > 0 {
+		if err := jsonpolicy.ValidateFields(obj, route.AllowedFields); err != nil {
+			return err
+		}
 	}
 	if err := validateTokenRequestFields(obj, route, tok); err != nil {
 		return err
@@ -1295,6 +1417,12 @@ func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Rout
 			return err
 		}
 	}
+	if err := validateResourceWriteConstraints(obj, route, tok); err != nil {
+		return err
+	}
+	if err := validateResourceCreateConstraints(route, tok); err != nil {
+		return err
+	}
 	if strings.HasPrefix(route.Name, "hwid.") {
 		if _, ok := obj["userUuid"]; !ok {
 			return fmt.Errorf("missing_user_uuid")
@@ -1303,6 +1431,94 @@ func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Rout
 	req.Body = io.NopCloser(bytes.NewReader(body))
 	req.ContentLength = int64(len(body))
 	return nil
+}
+
+func validateResourceCreateConstraints(route routes.Route, tok *config.TokenPolicy) error {
+	if tok == nil || route.Method != http.MethodPost {
+		return nil
+	}
+	switch route.Name {
+	case "post.config_profiles":
+		if !tok.Constraints.AllowAllConfigProfiles {
+			return fmt.Errorf("config_profile_denied")
+		}
+	case "post.hosts":
+		if !tok.Constraints.AllowAllHosts {
+			return fmt.Errorf("host_denied")
+		}
+	case "post.nodes":
+		if !tok.Constraints.AllowAllNodes {
+			return fmt.Errorf("node_denied")
+		}
+	}
+	return nil
+}
+
+func validateResourceWriteConstraints(obj map[string]json.RawMessage, route routes.Route, tok *config.TokenPolicy) error {
+	if tok == nil {
+		return nil
+	}
+	if route.Method != http.MethodPatch {
+		return nil
+	}
+	uuid := objectUUIDFromRaw(obj)
+	switch route.Name {
+	case "patch.subscription_templates":
+		return requireAllowedUUID(uuid, tok.Constraints.AllowedSubscriptionTemplates, "subscription_template_denied")
+	case "patch.internal_squads":
+		return requireAllowedUUID(uuid, tok.Constraints.AllowedWritableInternalSquads, "internal_squad_denied")
+	case "patch.external_squads":
+		return requireAllowedUUID(uuid, tok.Constraints.AllowedWritableExternalSquads, "external_squad_denied")
+	case "patch.config_profiles":
+		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedConfigProfiles, tok.Constraints.AllowAllConfigProfiles, "config_profile_denied")
+	case "patch.hosts":
+		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedHosts, tok.Constraints.AllowAllHosts, "host_denied")
+	case "patch.nodes":
+		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedNodes, tok.Constraints.AllowAllNodes, "node_denied")
+	default:
+		return nil
+	}
+}
+
+func objectUUIDFromRaw(obj map[string]json.RawMessage) string {
+	for _, field := range []string{"uuid", "id"} {
+		raw, ok := obj[field]
+		if !ok {
+			continue
+		}
+		var uuid string
+		if err := json.Unmarshal(raw, &uuid); err == nil {
+			return uuid
+		}
+	}
+	return ""
+}
+
+func requireAllowedUUID(uuid string, allowed []string, reason string) error {
+	if uuid == "" {
+		return fmt.Errorf("missing_uuid")
+	}
+	if !contains(allowed, uuid) {
+		return errors.New(reason)
+	}
+	return nil
+}
+
+func requireAllowedUUIDIfConfigured(uuid string, allowed []string, reason string) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	return requireAllowedUUID(uuid, allowed, reason)
+}
+
+func requireAllowedUUIDOrAll(uuid string, allowed []string, allowAll bool, reason string) error {
+	if allowAll {
+		if uuid == "" {
+			return fmt.Errorf("missing_uuid")
+		}
+		return nil
+	}
+	return requireAllowedUUID(uuid, allowed, reason)
 }
 
 func bufferRequestBody(req *http.Request, limit int64) error {
@@ -1899,6 +2115,8 @@ func (r *Runtime) preflight(req *http.Request, st *runtimeState, route routes.Ro
 			return fmt.Errorf("missing_user_uuid")
 		}
 		return r.preflightUser(req, st, uuid, tok)
+	case "post.nodes.uuid.actions.disable", "post.nodes.uuid.actions.enable", "post.nodes.uuid.actions.restart", "post.nodes.uuid.actions.reset_traffic":
+		return requireAllowedUUIDOrAll(pathSegment(path, 2), tok.Constraints.AllowedNodes, tok.Constraints.AllowAllNodes, "node_denied")
 	case "squad.internal.read":
 		if len(tok.Constraints.AllowedInternalSquads) > 0 && !contains(tok.Constraints.AllowedInternalSquads, pathSegment(path, 2)) {
 			return fmt.Errorf("internal_squad_denied")
@@ -1914,6 +2132,9 @@ func (r *Runtime) preflight(req *http.Request, st *runtimeState, route routes.Ro
 func (r *Runtime) preflightUser(req *http.Request, st *runtimeState, uuid string, tok *config.TokenPolicy) error {
 	if uuid == "" {
 		return fmt.Errorf("missing_user_uuid")
+	}
+	if len(tok.Constraints.AllowedUsers) > 0 && !contains(tok.Constraints.AllowedUsers, uuid) {
+		return fmt.Errorf("user_denied")
 	}
 	preReq := req.Clone(req.Context())
 	preReq.Method = http.MethodGet

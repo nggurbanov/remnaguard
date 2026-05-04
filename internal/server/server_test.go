@@ -513,6 +513,315 @@ func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) 
 	}
 }
 
+func TestReadWildcardCanReadSafePrivilegedRoutesAndDoesNotUseWriteAllowlistsAsReadFilters(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/hosts":
+			_, _ = w.Write([]byte(`{"response":{"hosts":[{"uuid":"host-a"}],"total":1}}`))
+		case "/api/internal-squads":
+			_, _ = w.Write([]byte(`{"response":{"internalSquads":[{"uuid":"squad-a","name":"A"},{"uuid":"squad-b","name":"B"}],"total":2}}`))
+		case "/api/users":
+			_, _ = w.Write([]byte(`{"response":{"users":[{"uuid":"user-a","username":"alpha"},{"uuid":"user-b","username":"beta"}],"total":2}}`))
+		default:
+			t.Fatalf("unexpected upstream path %q", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"read:*"}
+	cfg.Tokens[0].Constraints = config.Constraints{}
+	cfg.Tokens[0].Constraints.AllowedUsers = []string{"user-a"}
+	cfg.Tokens[0].Constraints.AllowedWritableInternalSquads = []string{"squad-a"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/api/hosts", "/api/internal-squads", "/api/users"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RequestURI = path
+		req.Header.Set("Authorization", "Bearer rg_cred.secret")
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %s read to be allowed, got %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if path == "/api/internal-squads" && (!strings.Contains(rec.Body.String(), "squad-a") || !strings.Contains(rec.Body.String(), "squad-b")) {
+			t.Fatalf("write squad allowlist filtered read response: %s", rec.Body.String())
+		}
+		if path == "/api/users" && (!strings.Contains(rec.Body.String(), "user-a") || !strings.Contains(rec.Body.String(), "user-b")) {
+			t.Fatalf("write user allowlist filtered read response: %s", rec.Body.String())
+		}
+	}
+}
+
+func TestReadWildcardDoesNotReadSensitiveRoutes(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("sensitive read must not reach upstream")
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"read:*"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		"/api/tokens",
+		"/api/remnawave-settings",
+		"/api/keygen",
+		"/api/config-profiles/11111111-1111-4111-8111-111111111111/computed-config",
+		"/api/subscription-request-history",
+		"/api/subscription-request-history/stats",
+		"/api/subscriptions/by-short-uuid/abcdef/raw",
+		"/api/subscriptions/connection-keys/11111111-1111-4111-8111-111111111111",
+		"/api/users/11111111-1111-4111-8111-111111111111/subscription-request-history",
+	}
+	for _, path := range paths {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RequestURI = path
+		req.Header.Set("Authorization", "Bearer rg_cred.secret")
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected %s read to remain forbidden, got %d: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestPanelReadWildcardUsesRouteQueryAllowlist(t *testing.T) {
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
+	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
+	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("unknown panel query must not reach upstream")
+	}))
+	defer upstream.Close()
+	tokenServer := newTelegramOAuthTokenServer(t)
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"read:*"}
+	cfg.Tokens[0].Constraints = config.Constraints{}
+	cfg.PanelFacade.Enabled = true
+	cfg.PanelFacade.Session.Issuer = "remnaguard-test"
+	cfg.PanelFacade.Session.Audience = "remnawave-panel"
+	cfg.PanelFacade.Session.TokenTTL = time.Hour
+	cfg.PanelFacade.Session.SecretEnv = "PANEL_SESSION_SECRET"
+	cfg.PanelFacade.Telegram.ClientIDEnv = "TELEGRAM_CLIENT_ID"
+	cfg.PanelFacade.Telegram.ClientSecretEnv = "TELEGRAM_CLIENT_SECRET"
+	cfg.PanelFacade.Telegram.FrontendDomain = "restricted.example.com"
+	cfg.PanelFacade.Telegram.AuthURL = "https://oauth.telegram.org/auth"
+	cfg.PanelFacade.Telegram.TokenURL = tokenServer.URL
+	cfg.PanelFacade.Telegram.AuthMaxAge = 5 * time.Minute
+	cfg.PanelFacade.Actors.Telegram = map[string]config.PanelFacadeTelegramActor{"123456789": {CredentialID: "cred", DisplayName: "Alice"}}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/hosts?unknown=1", nil)
+	req.RequestURI = "/api/hosts?unknown=1"
+	req.Header.Set("Authorization", "Bearer "+issueTestPanelSession(t, rt))
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected panel unknown query denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRestrictedWriteScopesRequireExplicitAllowlists(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	cfg := testConfig("https://example.test", "secret")
+	cfg.Tokens[0].Scopes = []string{"hosts:write"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "hosts:write requires") {
+		t.Fatalf("expected missing host allowlist validation error, got %v", err)
+	}
+
+	cfg = testConfig("https://example.test", "secret")
+	cfg.Tokens[0].Scopes = []string{"internal-squads:write"}
+	cfg.Tokens[0].Constraints.AllowedInternalSquads = []string{"11111111-1111-4111-8111-111111111111"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "allowed_writable_internal_squads") {
+		t.Fatalf("expected missing writable squad allowlist validation error, got %v", err)
+	}
+
+	cfg = testConfig("https://example.test", "secret")
+	cfg.Tokens[0].Scopes = []string{"users:update"}
+	cfg.Tokens[0].Constraints = config.Constraints{}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "user write scopes require") {
+		t.Fatalf("expected missing user write ownership validation error, got %v", err)
+	}
+}
+
+func TestRestrictedCreateRequiresExplicitAllowAll(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls++
+		_, _ = w.Write([]byte(`{"response":{"uuid":"host-a"}}`))
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"hosts:write"}
+	cfg.Tokens[0].Constraints = config.Constraints{AllowedHosts: []string{"host-a"}}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/hosts", strings.NewReader(`{"address":"example.test"}`))
+	req.RequestURI = "/api/hosts"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("expected create without allow_all_hosts to be denied")
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("denied host create reached upstream")
+	}
+}
+
+func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	allowedTemplate := "96b9a516-7088-4ecf-8be4-ad6379dc5d60"
+	allowedSquad := "aaf5e518-22f7-4dcd-9b51-360a30696465"
+	allowedNode := "11111111-1111-4111-8111-111111111111"
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/subscription-templates", "/api/internal-squads", "/api/nodes/" + allowedNode + "/actions/restart":
+			_, _ = w.Write([]byte(`{"response":{"ok":true}}`))
+		default:
+			t.Fatalf("unexpected upstream path %q", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"subscription-templates:write", "internal-squads:write", "nodes:write"}
+	cfg.Tokens[0].Constraints.AllowedSubscriptionTemplates = []string{allowedTemplate}
+	cfg.Tokens[0].Constraints.AllowedWritableInternalSquads = []string{allowedSquad}
+	cfg.Tokens[0].Constraints.AllowedNodes = []string{allowedNode}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowedRequests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPatch, "/api/subscription-templates", `{"uuid":"` + allowedTemplate + `","template":"x"}`},
+		{http.MethodPatch, "/api/internal-squads", `{"uuid":"` + allowedSquad + `","name":"core"}`},
+		{http.MethodPost, "/api/nodes/" + allowedNode + "/actions/restart", ``},
+	}
+	for _, item := range allowedRequests {
+		req := httptest.NewRequest(item.method, item.path, strings.NewReader(item.body))
+		req.RequestURI = item.path
+		req.Header.Set("Authorization", "Bearer rg_cred.secret")
+		if item.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected %s %s to be allowed, got %d: %s", item.method, item.path, rec.Code, rec.Body.String())
+		}
+	}
+
+	deniedRequests := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPatch, "/api/subscription-templates", `{"uuid":"23c544b0-2afe-49db-9311-e88b62306868","template":"x"}`},
+		{http.MethodPatch, "/api/internal-squads", `{"uuid":"14c9e79e-8a7e-4f9b-875c-7bbfa1904f0c","name":"foreign"}`},
+		{http.MethodPost, "/api/nodes/22222222-2222-4222-8222-222222222222/actions/restart", ``},
+	}
+	for _, item := range deniedRequests {
+		req := httptest.NewRequest(item.method, item.path, strings.NewReader(item.body))
+		req.RequestURI = item.path
+		req.Header.Set("Authorization", "Bearer rg_cred.secret")
+		if item.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		rt.apiHandler().ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Fatalf("expected %s %s to be denied, got ok: %s", item.method, item.path, rec.Body.String())
+		}
+	}
+	if upstreamCalls != len(allowedRequests) {
+		t.Fatalf("denied writes reached upstream: got %d upstream calls, want %d", upstreamCalls, len(allowedRequests))
+	}
+}
+
+func TestRestrictedUserWritesUseAllowedUsers(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	allowedUser := "ac5fbf59-fd74-4b6d-b499-ed9cc5d665c1"
+	foreignUser := "3a7a5314-c704-4293-a692-fc196d661d35"
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/users/"+allowedUser:
+			_, _ = w.Write([]byte(`{"response":{"uuid":"` + allowedUser + `","username":"infra-user"}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/users":
+			_, _ = w.Write([]byte(`{"response":{"uuid":"` + allowedUser + `","username":"infra-user"}}`))
+		default:
+			t.Fatalf("unexpected upstream %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.WriteSafety.SingleWriter = true
+	cfg.Tokens[0].Scopes = []string{"users:update", "users:action"}
+	cfg.Tokens[0].Constraints = config.Constraints{}
+	cfg.Tokens[0].Constraints.AllowedUsers = []string{allowedUser}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/users", strings.NewReader(`{"uuid":"`+allowedUser+`","description":"ok"}`))
+	req.RequestURI = "/api/users"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected allowed user update, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/users", strings.NewReader(`{"uuid":"`+foreignUser+`","description":"no"}`))
+	req.RequestURI = "/api/users"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("expected foreign user update denial, got ok: %s", rec.Body.String())
+	}
+	if upstreamCalls != 3 {
+		t.Fatalf("foreign user denial reached upstream: got %d upstream calls, want 3", upstreamCalls)
+	}
+}
+
 func TestRestrictedWriteDeniedWithoutExactScope(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
