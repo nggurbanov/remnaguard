@@ -312,6 +312,9 @@ func (r *Runtime) apiHandler() http.Handler {
 		if panelAuditContextFromRequest(req) != nil {
 			stripConditionalRequestHeaders(req)
 		}
+		if r.handlePanelRestrictedUserList(w, req, st, route, path, rawQuery, tok, cred) {
+			return
+		}
 		upstreamRawQuery := panelUpstreamRawQuery(req, route, tok, rawQuery)
 		upstreamRes, err := st.proxy.RoundTrip(w, req, path, upstreamRawQuery, false)
 		if err != nil {
@@ -952,6 +955,102 @@ func panelUpstreamRawQuery(req *http.Request, route routes.Route, tok *config.To
 	values.Del("page")
 	values.Del("limit")
 	return values.Encode()
+}
+
+func (r *Runtime) handlePanelRestrictedUserList(w http.ResponseWriter, req *http.Request, st *runtimeState, route routes.Route, path string, rawQuery string, tok *config.TokenPolicy, cred *config.Credential) bool {
+	if panelAuditContextFromRequest(req) == nil || route.Name != "user.list" || tokenHasPrivilegedScope(tok) {
+		return false
+	}
+	const upstreamPageSize = 1000
+	const maxPanelUserScan = 20000
+	combined := []any{}
+	var firstHeader http.Header
+	for start := 0; start < maxPanelUserScan; start += upstreamPageSize {
+		query := panelUserListPageQuery(rawQuery, start, upstreamPageSize)
+		res, err := st.proxy.RoundTrip(w, req, path, query, false)
+		if err != nil {
+			setPanelAuditAuthEventType(req, "upstream")
+			r.deny(w, req, route.Name, tok.ID, cred.ID, "upstream_unavailable", http.StatusBadGateway)
+			return true
+		}
+		if firstHeader == nil {
+			firstHeader = res.Header.Clone()
+		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			st.proxy.WriteResponse(w, res, false)
+			r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", res.StatusCode))
+			return true
+		}
+		users, total, err := decodeUserListPage(res.Body)
+		if err != nil {
+			r.deny(w, req, route.Name, tok.ID, cred.ID, "unfilterable_list_response", http.StatusBadGateway)
+			return true
+		}
+		combined = append(combined, users...)
+		if len(users) < upstreamPageSize || start+upstreamPageSize >= total {
+			break
+		}
+	}
+	root := map[string]any{"response": map[string]any{"users": combined, "total": len(combined)}}
+	body, err := json.Marshal(root)
+	if err != nil {
+		r.deny(w, req, route.Name, tok.ID, cred.ID, "unfilterable_list_response", http.StatusBadGateway)
+		return true
+	}
+	res := &proxy.Response{StatusCode: http.StatusOK, Header: firstHeader, Body: body}
+	if res.Header == nil {
+		res.Header = http.Header{}
+	}
+	if err := filterResponsePolicy(route, tok, res, req, rawQuery); err != nil {
+		r.deny(w, req, route.Name, tok.ID, cred.ID, err.Error(), http.StatusBadGateway)
+		return true
+	}
+	disablePanelCacheHeaders(res.Header)
+	st.proxy.WriteResponse(w, res, false)
+	r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", http.StatusOK))
+	return true
+}
+
+func panelUserListPageQuery(rawQuery string, start int, size int) string {
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		values = url.Values{}
+	}
+	values.Set("start", strconv.Itoa(start))
+	values.Set("size", strconv.Itoa(size))
+	values.Del("offset")
+	values.Del("page")
+	values.Del("limit")
+	return values.Encode()
+}
+
+func decodeUserListPage(body []byte) ([]any, int, error) {
+	var root map[string]any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
+		return nil, 0, err
+	}
+	response, ok := asObject(root["response"])
+	if !ok {
+		return nil, 0, fmt.Errorf("unfilterable_list_response")
+	}
+	users, ok := response["users"].([]any)
+	if !ok {
+		return nil, 0, fmt.Errorf("unfilterable_list_response")
+	}
+	total := len(users)
+	if n, ok := response["total"].(json.Number); ok {
+		if parsed, err := strconv.Atoi(n.String()); err == nil {
+			total = parsed
+		}
+	}
+	return users, total, nil
+}
+
+func asObject(value any) (map[string]any, bool) {
+	obj, ok := value.(map[string]any)
+	return obj, ok
 }
 
 func (r *Runtime) handlePanelReadFacade(w http.ResponseWriter, req *http.Request, cfg *config.Config, route routes.Route, path string, tok *config.TokenPolicy, cred *config.Credential) bool {
