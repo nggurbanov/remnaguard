@@ -189,6 +189,16 @@ type Constraints struct {
 	TelegramIDRanges               []IDRange           `yaml:"telegram_id_ranges" json:"telegram_id_ranges"`
 	AllowedInternalSquads          []string            `yaml:"allowed_internal_squads" json:"allowed_internal_squads"`
 	AllowedExternalSquads          []string            `yaml:"allowed_external_squads" json:"allowed_external_squads"`
+	AllowedUsers                   []string            `yaml:"allowed_users" json:"allowed_users"`
+	AllowedConfigProfiles          []string            `yaml:"allowed_config_profiles" json:"allowed_config_profiles"`
+	AllowedHosts                   []string            `yaml:"allowed_hosts" json:"allowed_hosts"`
+	AllowedNodes                   []string            `yaml:"allowed_nodes" json:"allowed_nodes"`
+	AllowAllConfigProfiles         bool                `yaml:"allow_all_config_profiles" json:"allow_all_config_profiles"`
+	AllowAllHosts                  bool                `yaml:"allow_all_hosts" json:"allow_all_hosts"`
+	AllowAllNodes                  bool                `yaml:"allow_all_nodes" json:"allow_all_nodes"`
+	AllowedSubscriptionTemplates   []string            `yaml:"allowed_subscription_templates" json:"allowed_subscription_templates"`
+	AllowedWritableInternalSquads  []string            `yaml:"allowed_writable_internal_squads" json:"allowed_writable_internal_squads"`
+	AllowedWritableExternalSquads  []string            `yaml:"allowed_writable_external_squads" json:"allowed_writable_external_squads"`
 	AllowedSubscriptionPageConfigs []string            `yaml:"allowed_subscription_page_configs" json:"allowed_subscription_page_configs"`
 	MaxTrafficLimitBytes           int64               `yaml:"max_traffic_limit_bytes" json:"max_traffic_limit_bytes"`
 	ForbidUnlimitedTraffic         bool                `yaml:"forbid_unlimited_traffic" json:"forbid_unlimited_traffic"`
@@ -376,6 +386,9 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("unknown scope %q on token %q", scope, tok.ID)
 			}
 		}
+		if err := validateRestrictedWriteAllowlists(tok); err != nil {
+			return err
+		}
 		if tok.Constraints.UsernameRegex != "" {
 			if _, err := regexp.Compile(tok.Constraints.UsernameRegex); err != nil {
 				return fmt.Errorf("invalid username_regex on token %q: %w", tok.ID, err)
@@ -415,6 +428,54 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validateRestrictedWriteAllowlists(tok TokenPolicy) error {
+	if hasUserWriteScope(tok) && len(tok.Constraints.AllowedUsers) == 0 && !hasUserOwnershipConstraint(tok.Constraints) {
+		return fmt.Errorf("user write scopes require allowed_users or user ownership constraints on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "config-profiles:write") && !tok.Constraints.AllowAllConfigProfiles && len(tok.Constraints.AllowedConfigProfiles) == 0 {
+		return fmt.Errorf("config-profiles:write requires allowed_config_profiles or allow_all_config_profiles on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "hosts:write") && !tok.Constraints.AllowAllHosts && len(tok.Constraints.AllowedHosts) == 0 {
+		return fmt.Errorf("hosts:write requires allowed_hosts or allow_all_hosts on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "nodes:write") && !tok.Constraints.AllowAllNodes && len(tok.Constraints.AllowedNodes) == 0 {
+		return fmt.Errorf("nodes:write requires allowed_nodes or allow_all_nodes on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "subscription-templates:write") && len(tok.Constraints.AllowedSubscriptionTemplates) == 0 {
+		return fmt.Errorf("subscription-templates:write requires allowed_subscription_templates on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "internal-squads:write") && len(tok.Constraints.AllowedWritableInternalSquads) == 0 {
+		return fmt.Errorf("internal-squads:write requires allowed_writable_internal_squads on token %q", tok.ID)
+	}
+	if hasTokenScope(tok, "external-squads:write") && len(tok.Constraints.AllowedWritableExternalSquads) == 0 {
+		return fmt.Errorf("external-squads:write requires allowed_writable_external_squads on token %q", tok.ID)
+	}
+	return nil
+}
+
+func hasUserWriteScope(tok TokenPolicy) bool {
+	for _, scope := range tok.Scopes {
+		switch scope {
+		case "users:create", "users:update", "users:action", "users:write", "user:write", "user:action", "hwid:write":
+			return true
+		}
+	}
+	return false
+}
+
+func hasUserOwnershipConstraint(c Constraints) bool {
+	return c.UsernamePrefix != "" || c.UsernameSuffix != "" || c.UsernameContains != "" || c.UsernameRegex != "" || c.EmailContains != "" || len(c.EmailDomains) > 0 || len(c.TelegramIDRanges) > 0 || len(c.AllowedInternalSquads) > 0 || len(c.AllowedExternalSquads) > 0 || len(c.AllowedSubscriptionPageConfigs) > 0
+}
+
+func hasTokenScope(tok TokenPolicy, scope string) bool {
+	for _, item := range tok.Scopes {
+		if item == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) validatePanelFacade() error {
@@ -617,7 +678,7 @@ func (c *Config) FindToken(id string) *TokenPolicy {
 
 func KnownScope(scope string) bool {
 	switch scope {
-	case "users:read", "users:create", "users:update", "users:action", "user:read", "user:write", "user:action", "hwid:read", "hwid:write", "squads:read", "squad:read", "system:read", "metadata:read", "subscriptions:read", "subscription:read", "subscription-pages:read", "subscription-pages:write", "remnawave:*", "privileged:*":
+	case "read:*", "users:read", "users:create", "users:update", "users:action", "users:write", "user:read", "user:write", "user:action", "hwid:read", "hwid:write", "squads:read", "squad:read", "config-profiles:write", "hosts:write", "nodes:write", "subscription-templates:write", "internal-squads:write", "external-squads:write", "system:read", "metadata:read", "subscriptions:read", "subscription:read", "subscription-pages:read", "subscription-pages:write", "remnawave:*", "privileged:*":
 		return true
 	default:
 		return false
