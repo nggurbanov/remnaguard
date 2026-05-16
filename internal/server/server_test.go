@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"crypto/hmac"
 	cryptorand "crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2070,12 +2068,6 @@ func postPanelCallback(t *testing.T, rt *Runtime, code string) *httptest.Respons
 	return postPanelCallbackWithStateAndCookie(t, rt, telegramOAuthCode(code, nonce), state, cookie)
 }
 
-func authorizeTelegramState(t *testing.T, rt *Runtime) string {
-	t.Helper()
-	state, _, _ := authorizeTelegramAttempt(t, rt)
-	return state
-}
-
 func authorizeTelegramAttempt(t *testing.T, rt *Runtime) (string, *http.Cookie, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth2/authorize", strings.NewReader(`{"provider":"telegram"}`))
@@ -2368,13 +2360,6 @@ func assertUpstreamHeadersExclude(t *testing.T, r *http.Request, forbidden ...st
 
 func strconvQuote(s string) string    { b, _ := json.Marshal(s); return string(b) }
 func strconvFormatInt(i int64) string { return fmt.Sprintf("%d", i) }
-func sha256Sum(b []byte) []byte       { sum := sha256.Sum256(b); return sum[:] }
-func hmacHex(key []byte, msg string) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(msg))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
 func testConfig(upstreamURL, secret string) *config.Config {
 	_ = os.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
 	cfg := config.Defaults()
