@@ -16,14 +16,15 @@ import (
 )
 
 type Event struct {
-	Name      string
-	Method    string
-	Path      string
-	Route     string
-	TokenID   string
-	Reason    string
-	Status    int
-	CreatedAt time.Time
+	Name        string
+	Method      string
+	Path        string
+	Route       string
+	TokenID     string
+	Reason      string
+	Status      int
+	HasAuthHint bool
+	CreatedAt   time.Time
 }
 
 type Manager struct {
@@ -76,7 +77,7 @@ func (m *Manager) Notify(event Event) {
 	m.mu.Lock()
 	enabled := m.cfg.Enabled && m.cfg.Telegram.Enabled && event.Name == "request_denied"
 	m.mu.Unlock()
-	if !enabled {
+	if !enabled || suppressEvent(event) {
 		return
 	}
 	if event.CreatedAt.IsZero() {
@@ -189,6 +190,16 @@ func cloneBucket(b *bucket) *bucket {
 
 func alertKey(ev Event) string {
 	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
+}
+
+func suppressEvent(ev Event) bool {
+	if ev.HasAuthHint || ev.TokenID != "" {
+		return false
+	}
+	if ev.Route == "" && ev.Reason == "unknown_route" && ev.Status == http.StatusNotFound {
+		return true
+	}
+	return strings.HasPrefix(ev.Route, "sub.") && ev.Reason == "public_subscriptions_disabled" && ev.Status == http.StatusForbidden
 }
 
 func (m *Manager) send(b bucket) {

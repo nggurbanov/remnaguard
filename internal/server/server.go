@@ -713,7 +713,7 @@ func (r *Runtime) exchangeTelegramOAuthCode(ctx context.Context, cfg *config.Con
 	if err != nil {
 		return "", fmt.Errorf("telegram_oauth_unavailable")
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return "", fmt.Errorf("telegram_oauth_denied")
 	}
@@ -790,7 +790,7 @@ func fetchTelegramJWK(ctx context.Context, cfg *config.Config, kid string) (*rsa
 	if err != nil {
 		return nil, fmt.Errorf("telegram_oauth_unavailable")
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return nil, fmt.Errorf("telegram_oauth_unavailable")
 	}
@@ -1504,13 +1504,6 @@ func requireAllowedUUID(uuid string, allowed []string, reason string) error {
 	return nil
 }
 
-func requireAllowedUUIDIfConfigured(uuid string, allowed []string, reason string) error {
-	if len(allowed) == 0 {
-		return nil
-	}
-	return requireAllowedUUID(uuid, allowed, reason)
-}
-
 func requireAllowedUUIDOrAll(uuid string, allowed []string, allowAll bool, reason string) error {
 	if allowAll {
 		if uuid == "" {
@@ -2039,32 +2032,6 @@ func slicePage(items []any, page *responsePage) []any {
 	return items[page.start:end]
 }
 
-func filterListNode(node any, keep func(any) bool) (any, int, bool) {
-	switch typed := node.(type) {
-	case []any:
-		out := make([]any, 0, len(typed))
-		for _, item := range typed {
-			if keep(item) {
-				out = append(out, item)
-			}
-		}
-		return out, len(out), true
-	case map[string]any:
-		for _, key := range []string{"response", "users", "internalSquads", "externalSquads", "subscriptionPageConfigs", "subscription_page_configs", "configs", "items", "data"} {
-			child, ok := typed[key]
-			if !ok {
-				continue
-			}
-			filtered, count, ok := filterListNode(child, keep)
-			if ok {
-				typed[key] = filtered
-				return typed, count, true
-			}
-		}
-	}
-	return nil, 0, false
-}
-
 func redactCountMetadata(node any, visible int) {
 	obj, ok := node.(map[string]any)
 	if !ok {
@@ -2273,14 +2240,15 @@ func (r *Runtime) deny(w http.ResponseWriter, req *http.Request, route, tokenID,
 	fields := panelAuditFields(req, "", 0)
 	r.audit.EmitRequestFields("request_denied", route, tokenID, credentialID, reason, method, path, status, fields)
 	r.alerts.Notify(alerts.Event{
-		Name:      "request_denied",
-		Method:    method,
-		Path:      path,
-		Route:     route,
-		TokenID:   tokenID,
-		Reason:    reason,
-		Status:    status,
-		CreatedAt: time.Now().UTC(),
+		Name:        "request_denied",
+		Method:      method,
+		Path:        path,
+		Route:       route,
+		TokenID:     tokenID,
+		Reason:      reason,
+		Status:      status,
+		HasAuthHint: req.Header.Get("Authorization") != "",
+		CreatedAt:   time.Now().UTC(),
 	})
 	if fields != nil || strings.HasPrefix(path, "/api/auth/") {
 		writeJSON(w, status, map[string]any{"path": path, "message": http.StatusText(status), "errorCode": "REMNAGUARD_DENIED", "reason": reason})
