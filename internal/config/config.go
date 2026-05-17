@@ -270,6 +270,9 @@ func (c *Config) Validate() error {
 	if u.Scheme != "https" && !c.Upstream.AllowInsecureHTTP && !isLocalHost(u.Hostname()) {
 		return errors.New("upstream must be https unless localhost/private insecure override is explicit")
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("upstream.base_url must not contain userinfo, query, or fragment")
+	}
 	if c.configuredBearerSources() != 1 {
 		return errors.New("exactly one upstream bearer source must be configured")
 	}
@@ -343,8 +346,8 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, name := range c.PublicSubs.ResponseHeaderAllowlist {
-		if !validHeaderName(name) {
-			return fmt.Errorf("invalid public subscription header %q", name)
+		if protectedResponseHeader(name) {
+			return fmt.Errorf("invalid public subscription response header %q", name)
 		}
 	}
 	for name := range c.PublicSubs.ExtraResponseHeaders {

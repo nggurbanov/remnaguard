@@ -55,6 +55,12 @@ func TestValidateRejectsProtectedExtraHeaders(t *testing.T) {
 			cfg.PublicSubs.ExtraResponseHeaders = map[string]string{"Transfer-Encoding": "chunked"}
 		}},
 		{name: "public response length", edit: func(cfg *Config) { cfg.PublicSubs.ExtraResponseHeaders = map[string]string{"Content-Length": "42"} }},
+		{name: "public response allowlist cookie", edit: func(cfg *Config) {
+			cfg.PublicSubs.ResponseHeaderAllowlist = append(cfg.PublicSubs.ResponseHeaderAllowlist, "Set-Cookie")
+		}},
+		{name: "public response allowlist redirect", edit: func(cfg *Config) {
+			cfg.PublicSubs.ResponseHeaderAllowlist = append(cfg.PublicSubs.ResponseHeaderAllowlist, "Location")
+		}},
 		{name: "upstream accept encoding", edit: func(cfg *Config) { cfg.Upstream.ExtraHeaders = map[string]string{"Accept-Encoding": "gzip"} }},
 		{name: "public allowlist content length", edit: func(cfg *Config) {
 			cfg.PublicSubs.RequestHeaderAllowlist = append(cfg.PublicSubs.RequestHeaderAllowlist, "Content-Length")
@@ -67,6 +73,23 @@ func TestValidateRejectsProtectedExtraHeaders(t *testing.T) {
 			tc.edit(cfg)
 			if err := cfg.Validate(); err == nil {
 				t.Fatal("expected protected extra header to be rejected")
+			}
+		})
+	}
+}
+
+func TestValidateRejectsAmbiguousUpstreamBaseURL(t *testing.T) {
+	for _, raw := range []string{
+		"https://user:pass@example.test",
+		"https://example.test?token=secret",
+		"https://example.test/#fragment",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			cfg := Defaults()
+			cfg.Upstream.BaseURL = raw
+			cfg.Upstream.Bearer = "root"
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected ambiguous upstream base URL to be rejected")
 			}
 		})
 	}
