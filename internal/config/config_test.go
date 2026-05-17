@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidateRejectsNonPositiveCoreLimits(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	cases := []struct {
 		name string
 		edit func(*Config)
@@ -31,6 +31,57 @@ func TestValidateRejectsNonPositiveCoreLimits(t *testing.T) {
 				t.Fatal("expected non-positive limit to be rejected")
 			}
 		})
+	}
+}
+
+func TestValidateRequiresExplicitLocalListenerExposure(t *testing.T) {
+	cases := []string{":8081", "0.0.0.0:8081", "[::]:8081"}
+	for _, listen := range cases {
+		t.Run(listen, func(t *testing.T) {
+			cfg := Defaults()
+			cfg.Upstream.BaseURL = "https://example.test"
+			cfg.Upstream.Bearer = "root"
+			cfg.Server.LocalListen = listen
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected non-loopback local listener to require expose_local")
+			}
+			cfg.Server.ExposeLocal = true
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected explicit exposure to be accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsExposeLocalOnLoopback(t *testing.T) {
+	for _, listen := range []string{"127.0.0.1:8081", "[::1]:8081", "localhost:8081"} {
+		t.Run(listen, func(t *testing.T) {
+			cfg := Defaults()
+			cfg.Upstream.BaseURL = "https://example.test"
+			cfg.Upstream.Bearer = "root"
+			cfg.Server.LocalListen = listen
+			cfg.Server.ExposeLocal = true
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected expose_local on loopback listener to be rejected")
+			}
+		})
+	}
+}
+
+func TestValidateRequiresStrongRuntimeSecrets(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "short")
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.Tokens = []TokenPolicy{{ID: "tenant-a", Scopes: []string{"users:read"}, Credentials: []Credential{{ID: "cred", HMACSHA256: "digest"}}}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected short token pepper to be rejected")
+	}
+
+	cfg = validPanelFacadeConfig(t)
+	t.Setenv("PANEL_SESSION_SECRET", "short")
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected short panel session secret to be rejected")
 	}
 }
 
@@ -178,7 +229,7 @@ alerts:
 }
 
 func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	for _, tc := range []struct {
 		name string
 		edit func(*TokenPolicy)
@@ -305,8 +356,8 @@ func TestValidateRejectsPanelFacadeEmptyTelegramActorID(t *testing.T) {
 
 func validPanelFacadeConfig(t *testing.T) *Config {
 	t.Helper()
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
-	t.Setenv("PANEL_SESSION_SECRET", "session-secret")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
 	t.Setenv("PANEL_TELEGRAM_CLIENT_ID", "telegram-client-id")
 	t.Setenv("PANEL_TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	cfg := Defaults()

@@ -90,3 +90,25 @@ func TestOwnsUserExtendedConstraintsDenyForeignValues(t *testing.T) {
 		t.Fatal("expected telegram denial")
 	}
 }
+
+func TestOwnsUserRequiresEvidenceForConfiguredConstraints(t *testing.T) {
+	cases := []struct {
+		name string
+		tok  config.TokenPolicy
+		user User
+	}{
+		{name: "email domain", tok: config.TokenPolicy{Constraints: config.Constraints{EmailDomains: []string{"example.com"}}}, user: User{}},
+		{name: "email contains", tok: config.TokenPolicy{Constraints: config.Constraints{EmailContains: "@example."}}, user: User{}},
+		{name: "telegram range", tok: config.TokenPolicy{Constraints: config.Constraints{TelegramIDRanges: []config.IDRange{{Min: 10, Max: 20}}}}, user: User{}},
+		{name: "internal squad", tok: config.TokenPolicy{Constraints: config.Constraints{AllowedInternalSquads: []string{"internal-a"}}}, user: User{}},
+		{name: "external squad", tok: config.TokenPolicy{Constraints: config.Constraints{AllowedExternalSquads: []string{"external-a"}}}, user: User{}},
+		{name: "subscription page", tok: config.TokenPolicy{Constraints: config.Constraints{AllowedSubscriptionPageConfigs: []string{"page-a"}}}, user: User{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := OwnsUser(&tc.tok, tc.user); err == nil {
+				t.Fatal("expected missing ownership evidence to be denied")
+			}
+		})
+	}
+}

@@ -80,7 +80,13 @@ func ValidatePanelSession(panel config.PanelFacadeConfig, token string, now time
 	if strings.TrimSpace(claims.TelegramActorID) == "" {
 		return PanelSessionClaims{}, ErrInvalidPanelSession
 	}
+	if claims.IssuedAt > now.Add(time.Minute).Unix() {
+		return PanelSessionClaims{}, ErrInvalidPanelSession
+	}
 	if claims.ExpiresAt <= now.Unix() {
+		return PanelSessionClaims{}, ErrInvalidPanelSession
+	}
+	if claims.ExpiresAt-claims.IssuedAt > int64(panel.Session.TokenTTL.Seconds())+60 {
 		return PanelSessionClaims{}, ErrInvalidPanelSession
 	}
 	return claims, nil
