@@ -1729,6 +1729,15 @@ func enforceResponsePolicy(route routes.Route, tok *config.TokenPolicy, res *pro
 		return redactSquadResponse(res)
 	case "subscription_page_config.read":
 		return enforceSubscriptionPageConfigResponse(tok, res)
+	case "sub.info", "sub.base", "sub.client":
+		user, err := remnawave.DecodeUser(res.Body)
+		if err != nil {
+			if remnawave.IsEmptyUserResponse(res.Body) {
+				return nil
+			}
+			return err
+		}
+		return remnawave.OwnsUser(tok, user)
 	default:
 		return nil
 	}
@@ -2092,8 +2101,37 @@ func (r *Runtime) preflight(req *http.Request, st *runtimeState, route routes.Ro
 		if len(tok.Constraints.AllowedExternalSquads) > 0 && !contains(tok.Constraints.AllowedExternalSquads, pathSegment(path, 2)) {
 			return fmt.Errorf("external_squad_denied")
 		}
+	case "sub.info", "sub.base", "sub.client":
+		return r.preflightSubscription(req, st, pathSegment(path, 2), tok)
 	}
 	return nil
+}
+
+func (r *Runtime) preflightSubscription(req *http.Request, st *runtimeState, shortUUID string, tok *config.TokenPolicy) error {
+	if shortUUID == "" {
+		return fmt.Errorf("missing_short_uuid")
+	}
+	preReq := req.Clone(req.Context())
+	preReq.Method = http.MethodGet
+	preReq.Body = nil
+	preReq.ContentLength = 0
+	preReq.GetBody = nil
+	preReq.Header.Del("Content-Type")
+	res, err := st.proxy.RoundTrip(dummyResponseWriter{}, preReq, "/api/sub/"+shortUUID+"/info", "", false)
+	if err != nil {
+		return fmt.Errorf("preflight_failed")
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("preflight_denied")
+	}
+	user, err := remnawave.DecodeUser(res.Body)
+	if err != nil {
+		if remnawave.IsEmptyUserResponse(res.Body) {
+			return nil
+		}
+		return err
+	}
+	return remnawave.OwnsUser(tok, user)
 }
 
 func (r *Runtime) preflightUser(req *http.Request, st *runtimeState, uuid string, tok *config.TokenPolicy) error {
