@@ -1,5 +1,5 @@
 # RemnaGuard is not affiliated with, endorsed by, or sponsored by Remnawave.
-FROM golang:1.26-alpine AS build
+FROM golang:1.26.3-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache ca-certificates tzdata
 COPY go.mod ./

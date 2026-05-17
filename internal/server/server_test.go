@@ -26,7 +26,7 @@ import (
 )
 
 func TestSingletonUserReadResponseOwnershipGate(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer root" {
 			t.Fatalf("unexpected upstream auth %q", r.Header.Get("Authorization"))
@@ -51,7 +51,7 @@ func TestSingletonUserReadResponseOwnershipGate(t *testing.T) {
 }
 
 func TestEmptyUserReadResponsePassesThrough(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":[]}`))
@@ -76,7 +76,7 @@ func TestEmptyUserReadResponsePassesThrough(t *testing.T) {
 }
 
 func TestPrivilegedRepresentativeRoutesProxy(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	var seen []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method+" "+r.URL.RequestURI())
@@ -461,7 +461,7 @@ func TestAllForwardedHeadersAreStripped(t *testing.T) {
 }
 
 func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -512,7 +512,7 @@ func TestRestrictedUserCreateValidatesSquadsAndPostWriteOwnership(t *testing.T) 
 }
 
 func TestReadWildcardCanReadSafePrivilegedRoutesAndDoesNotUseWriteAllowlistsAsReadFilters(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -559,7 +559,7 @@ func TestReadWildcardCanReadSafePrivilegedRoutesAndDoesNotUseWriteAllowlistsAsRe
 }
 
 func TestReadWildcardDoesNotReadSensitiveRoutes(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("sensitive read must not reach upstream")
 	}))
@@ -595,7 +595,7 @@ func TestReadWildcardDoesNotReadSensitiveRoutes(t *testing.T) {
 }
 
 func TestPanelReadWildcardUsesRouteQueryAllowlist(t *testing.T) {
-	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
 	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
 	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -633,7 +633,7 @@ func TestPanelReadWildcardUsesRouteQueryAllowlist(t *testing.T) {
 }
 
 func TestRestrictedWriteScopesRequireExplicitAllowlists(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	cfg := testConfig("https://example.test", "secret")
 	cfg.Tokens[0].Scopes = []string{"hosts:write"}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "hosts:write requires") {
@@ -656,7 +656,7 @@ func TestRestrictedWriteScopesRequireExplicitAllowlists(t *testing.T) {
 }
 
 func TestRestrictedCreateRequiresExplicitAllowAll(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		upstreamCalls++
@@ -687,7 +687,7 @@ func TestRestrictedCreateRequiresExplicitAllowAll(t *testing.T) {
 }
 
 func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	allowedTemplate := "96b9a516-7088-4ecf-8be4-ad6379dc5d60"
 	allowedSquad := "aaf5e518-22f7-4dcd-9b51-360a30696465"
 	allowedNode := "11111111-1111-4111-8111-111111111111"
@@ -767,7 +767,7 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 }
 
 func TestRestrictedUserWritesUseAllowedUsers(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	allowedUser := "ac5fbf59-fd74-4b6d-b499-ed9cc5d665c1"
 	foreignUser := "3a7a5314-c704-4293-a692-fc196d661d35"
 	upstreamCalls := 0
@@ -821,7 +821,7 @@ func TestRestrictedUserWritesUseAllowedUsers(t *testing.T) {
 }
 
 func TestRestrictedWriteDeniedWithoutExactScope(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("missing-scope write must not reach upstream")
 	}))
@@ -846,7 +846,7 @@ func TestRestrictedWriteDeniedWithoutExactScope(t *testing.T) {
 }
 
 func TestTokenSpecificAllowedRequestFields(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("denied request field must not reach upstream")
 	}))
@@ -872,7 +872,7 @@ func TestTokenSpecificAllowedRequestFields(t *testing.T) {
 }
 
 func TestRestrictedWriteDeniesTelegramIDAliasBeforeUpstream(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("denied telegram_id alias must not reach upstream")
 	}))
@@ -899,7 +899,7 @@ func TestRestrictedWriteDeniesTelegramIDAliasBeforeUpstream(t *testing.T) {
 }
 
 func TestRestrictedWriteDeniesExternalSquadAliasBeforeUpstream(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Fatal("denied external_squad_uuid alias must not reach upstream")
 	}))
@@ -926,7 +926,7 @@ func TestRestrictedWriteDeniesExternalSquadAliasBeforeUpstream(t *testing.T) {
 }
 
 func TestUserListResponseIsFiltered(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":{"users":[{"uuid":"u1","username":"restricted-a"},{"uuid":"u2","username":"foreign-b"}],"total":2}}`))
@@ -953,7 +953,7 @@ func TestUserListResponseIsFiltered(t *testing.T) {
 }
 
 func TestSquadListResponseIsFiltered(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":{"total":2,"internalSquads":[{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","viewPosition":1,"info":{"membersCount":2,"inboundsCount":3},"inbounds":[{"tag":"node"}],"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z","rawInbound":{"privateKey":"secret"}},{"uuid":"22222222-2222-4222-8222-222222222222","name":"B","viewPosition":2,"info":{"membersCount":1,"inboundsCount":1},"inbounds":[],"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z","rawInbound":{"privateKey":"secret"}}]}}`))
@@ -989,7 +989,7 @@ func TestSquadListResponseIsFiltered(t *testing.T) {
 }
 
 func TestSquadDetailResponseIsRedacted(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":{"uuid":"11111111-1111-4111-8111-111111111111","name":"A","viewPosition":1,"inbounds":[{"tag":"node"}],"rawInbound":{"privateKey":"secret"}}}`))
@@ -1019,7 +1019,7 @@ func TestSquadDetailResponseIsRedacted(t *testing.T) {
 }
 
 func TestAuthenticatedSubscriptionRouteWorksWhenPublicDisabled(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer root" {
 			t.Fatalf("unexpected upstream auth %q", r.Header.Get("Authorization"))
@@ -1070,7 +1070,7 @@ func TestSubscriptionRouteWithoutAuthStillRequiresPublicMode(t *testing.T) {
 }
 
 func TestSubscriptionPageConfigListIsFiltered(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	allowed := "11111111-1111-4111-8111-111111111111"
 	foreign := "22222222-2222-4222-8222-222222222222"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1106,7 +1106,7 @@ func TestSubscriptionPageConfigListIsFiltered(t *testing.T) {
 }
 
 func TestSubscriptionPageConfigDetailIsDeniedOutsideAllowlist(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	allowed := "11111111-1111-4111-8111-111111111111"
 	foreign := "22222222-2222-4222-8222-222222222222"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1133,7 +1133,7 @@ func TestSubscriptionPageConfigDetailIsDeniedOutsideAllowlist(t *testing.T) {
 }
 
 func TestSubscriptionSubpageConfigProxiesReadOnlyResponse(t *testing.T) {
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":{"theme":"bat"}}`))
@@ -1260,7 +1260,7 @@ func TestPanelAuthFacadeTelegramCallbackIssuesPanelSession(t *testing.T) {
 	if claims.TelegramActorID != "123456789" {
 		t.Fatalf("callback returned token for actor %q", claims.TelegramActorID)
 	}
-	for _, secret := range []string{"root", "secret", "panel-session-secret", "telegram-client-secret"} {
+	for _, secret := range []string{"root", "secret", "panel-session-secret-panel-session-32", "telegram-client-secret"} {
 		if strings.Contains(body.Response.AccessToken, secret) {
 			t.Fatalf("panel token exposes secret material %q in %q", secret, body.Response.AccessToken)
 		}
@@ -1995,7 +1995,7 @@ func newPanelFacadeRuntime(t *testing.T) *Runtime {
 
 func newPanelFacadeRuntimeCountingUpstream(t *testing.T) (*Runtime, *int) {
 	t.Helper()
-	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
 	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
 	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	upstreamCalls := 0
@@ -2027,7 +2027,7 @@ func newPanelFacadeRuntimeCountingUpstream(t *testing.T) (*Runtime, *int) {
 
 func newPanelFacadeProxyRuntime(t *testing.T, upstreamHandler http.HandlerFunc) *Runtime {
 	t.Helper()
-	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
 	t.Setenv("TELEGRAM_CLIENT_ID", "telegram-client-id")
 	t.Setenv("TELEGRAM_CLIENT_SECRET", "telegram-client-secret")
 	upstream := httptest.NewServer(upstreamHandler)
@@ -2336,7 +2336,7 @@ func assertAuditValue(t *testing.T, event map[string]any, key string, want any) 
 
 func assertNoSecretMaterial(t *testing.T, text string, dynamicSecrets ...string) {
 	t.Helper()
-	secrets := []string{"root", "secret", "panel-session-secret", "telegram-client-secret", "Bearer panel_invalid_secret_value", "rg_cred.secret"}
+	secrets := []string{"root", "secret", "panel-session-secret-panel-session-32", "telegram-client-secret", "Bearer panel_invalid_secret_value", "rg_cred.secret"}
 	secrets = append(secrets, dynamicSecrets...)
 	for _, secret := range secrets {
 		if secret != "" && strings.Contains(text, secret) {
@@ -2361,7 +2361,7 @@ func assertUpstreamHeadersExclude(t *testing.T, r *http.Request, forbidden ...st
 func strconvQuote(s string) string    { b, _ := json.Marshal(s); return string(b) }
 func strconvFormatInt(i int64) string { return fmt.Sprintf("%d", i) }
 func testConfig(upstreamURL, secret string) *config.Config {
-	_ = os.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper")
+	_ = os.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	cfg := config.Defaults()
 	cfg.Upstream.BaseURL = upstreamURL
 	cfg.Upstream.Bearer = "root"
@@ -2372,7 +2372,7 @@ func testConfig(upstreamURL, secret string) *config.Config {
 		ID:          "restricted",
 		Scopes:      []string{"users:read", "hwid:read"},
 		Constraints: config.Constraints{UsernamePrefix: "restricted-"},
-		Credentials: []config.Credential{{ID: "cred", HMACSHA256: auth.Digest(secret, []byte("pepper"))}},
+		Credentials: []config.Credential{{ID: "cred", HMACSHA256: auth.Digest(secret, []byte("pepper-pepper-pepper-pepper-pepper-32"))}},
 	}}
 	return cfg
 }

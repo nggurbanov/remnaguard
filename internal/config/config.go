@@ -270,6 +270,9 @@ func (c *Config) Validate() error {
 	if u.Scheme != "https" && !c.Upstream.AllowInsecureHTTP && !isLocalHost(u.Hostname()) {
 		return errors.New("upstream must be https unless localhost/private insecure override is explicit")
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("upstream.base_url must not contain userinfo, query, or fragment")
+	}
 	if c.configuredBearerSources() != 1 {
 		return errors.New("exactly one upstream bearer source must be configured")
 	}
@@ -343,8 +346,8 @@ func (c *Config) Validate() error {
 		}
 	}
 	for _, name := range c.PublicSubs.ResponseHeaderAllowlist {
-		if !validHeaderName(name) {
-			return fmt.Errorf("invalid public subscription header %q", name)
+		if protectedResponseHeader(name) {
+			return fmt.Errorf("invalid public subscription response header %q", name)
 		}
 	}
 	for name := range c.PublicSubs.ExtraResponseHeaders {
@@ -365,11 +368,16 @@ func (c *Config) Validate() error {
 	if c.Server.LocalListen == "" {
 		return errors.New("server.local_listen is required")
 	}
-	if c.Server.ExposeLocal && strings.HasPrefix(c.Server.LocalListen, "127.0.0.1:") {
-		return errors.New("server.expose_local cannot be true while local listener is localhost-only")
+	if !c.Server.ExposeLocal && !listenHostIsLoopback(c.Server.LocalListen) {
+		return errors.New("server.local_listen must be loopback unless server.expose_local is true")
 	}
-	if os.Getenv("REMNAGUARD_TOKEN_PEPPER") == "" && len(c.Tokens) > 0 {
-		return errors.New("REMNAGUARD_TOKEN_PEPPER is required when tokens are configured")
+	if c.Server.ExposeLocal && listenHostIsLoopback(c.Server.LocalListen) {
+		return errors.New("server.expose_local cannot be true while local listener is loopback-only")
+	}
+	if len(c.Tokens) > 0 {
+		if err := requireStrongSecretEnv("REMNAGUARD_TOKEN_PEPPER"); err != nil {
+			return err
+		}
 	}
 	credIDs := map[string]bool{}
 	tokenIDs := map[string]bool{}
@@ -495,8 +503,8 @@ func (c *Config) validatePanelFacade() error {
 	if strings.TrimSpace(panel.Session.SecretEnv) == "" {
 		return errors.New("panel_facade.session.secret_env is required")
 	}
-	if strings.TrimSpace(os.Getenv(panel.Session.SecretEnv)) == "" {
-		return errors.New("panel_facade.session.secret_env must resolve to a non-empty value")
+	if err := requireStrongSecretEnv(panel.Session.SecretEnv); err != nil {
+		return fmt.Errorf("panel_facade.session.secret_env: %w", err)
 	}
 	if strings.TrimSpace(panel.Telegram.ClientIDEnv) == "" {
 		return errors.New("panel_facade.telegram.client_id_env is required")
@@ -703,6 +711,28 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func listenHostIsLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "" {
+		return false
+	}
+	return isLoopbackHost(strings.Trim(host, "[]"))
+}
+
+func requireStrongSecretEnv(name string) error {
+	secret := strings.TrimSpace(os.Getenv(name))
+	if secret == "" {
+		return fmt.Errorf("%s must resolve to a non-empty value", name)
+	}
+	if len(secret) < 32 {
+		return fmt.Errorf("%s must be at least 32 bytes", name)
+	}
+	return nil
 }
 
 func validHeaderName(name string) bool {

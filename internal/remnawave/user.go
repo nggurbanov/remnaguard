@@ -150,8 +150,13 @@ func OwnsUser(tok *config.TokenPolicy, user User) error {
 	}
 	internal := append([]SquadRef{}, user.InternalSquads...)
 	internal = append(internal, user.ActiveInternalSquads...)
-	if len(c.AllowedInternalSquads) > 0 && !squadsAllowed(internal, c.AllowedInternalSquads) {
-		return errors.New("internal_squad_denied")
+	if len(c.AllowedInternalSquads) > 0 {
+		if len(internal) == 0 {
+			return errors.New("missing_internal_squad")
+		}
+		if !squadsAllowed(internal, c.AllowedInternalSquads) {
+			return errors.New("internal_squad_denied")
+		}
 	}
 	external := append([]SquadRef{}, user.ExternalSquads...)
 	if user.ExternalSquad != nil {
@@ -160,11 +165,21 @@ func OwnsUser(tok *config.TokenPolicy, user User) error {
 	if user.ExternalSquadUUID != "" {
 		external = append(external, SquadRef{UUID: user.ExternalSquadUUID})
 	}
-	if len(c.AllowedExternalSquads) > 0 && !squadsAllowed(external, c.AllowedExternalSquads) {
-		return errors.New("external_squad_denied")
+	if len(c.AllowedExternalSquads) > 0 {
+		if len(external) == 0 {
+			return errors.New("missing_external_squad")
+		}
+		if !squadsAllowed(external, c.AllowedExternalSquads) {
+			return errors.New("external_squad_denied")
+		}
 	}
-	if user.SubscriptionPageConfigUUID != "" && len(c.AllowedSubscriptionPageConfigs) > 0 && !contains(c.AllowedSubscriptionPageConfigs, user.SubscriptionPageConfigUUID) {
-		return errors.New("subscription_page_config_denied")
+	if len(c.AllowedSubscriptionPageConfigs) > 0 {
+		if user.SubscriptionPageConfigUUID == "" {
+			return errors.New("missing_subscription_page_config")
+		}
+		if !contains(c.AllowedSubscriptionPageConfigs, user.SubscriptionPageConfigUUID) {
+			return errors.New("subscription_page_config_denied")
+		}
 	}
 	return nil
 }
@@ -196,6 +211,9 @@ func ValidateUsername(c config.Constraints, username string) error {
 
 func ValidateEmail(c config.Constraints, email string) error {
 	if email == "" {
+		if c.EmailContains != "" || len(c.EmailDomains) > 0 {
+			return errors.New("missing_email")
+		}
 		return nil
 	}
 	lower := strings.ToLower(email)
@@ -212,8 +230,11 @@ func ValidateEmail(c config.Constraints, email string) error {
 }
 
 func ValidateTelegramID(c config.Constraints, id int64) error {
-	if len(c.TelegramIDRanges) == 0 || id == 0 {
+	if len(c.TelegramIDRanges) == 0 {
 		return nil
+	}
+	if id == 0 {
+		return errors.New("missing_telegram_id")
 	}
 	for _, r := range c.TelegramIDRanges {
 		if id >= r.Min && id <= r.Max {

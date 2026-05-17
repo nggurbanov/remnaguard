@@ -21,7 +21,7 @@ func TestParseBearer(t *testing.T) {
 }
 
 func TestVerify(t *testing.T) {
-	pepper := []byte("pepper")
+	pepper := []byte("pepper-pepper-pepper-pepper-pepper-32")
 	cred := config.Credential{ID: "cred", HMACSHA256: Digest("secret", pepper)}
 	if !Verify("secret", pepper, cred) {
 		t.Fatal("expected secret to verify")
@@ -47,7 +47,7 @@ func TestPanelSessionIssueValidateAndRawBearerSeparation(t *testing.T) {
 	if _, err := ParseBearer("Bearer " + token); err == nil {
 		t.Fatal("panel session token must not parse as a raw RemnaGuard credential")
 	}
-	pepper := []byte("pepper")
+	pepper := []byte("pepper-pepper-pepper-pepper-pepper-32")
 	rawCred := config.Credential{ID: "cred", HMACSHA256: Digest("secret", pepper)}
 	if Verify(token, pepper, rawCred) {
 		t.Fatal("panel session token must not verify as a raw RemnaGuard credential secret")
@@ -159,7 +159,7 @@ func TestPanelSessionPayloadContainsOnlySafeSessionClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbiddenMaterial := range []string{"panel-cred", "users:read", "root-secret", "rg_", "telegram-secret", "panel-session-secret", "pepper-secret"} {
+	for _, forbiddenMaterial := range []string{"panel-cred", "users:read", "root-secret", "rg_", "telegram-secret", "panel-session-secret-panel-session-32", "pepper-secret-pepper-secret-32bytes"} {
 		if strings.Contains(string(decodedPayload), forbiddenMaterial) {
 			t.Fatalf("forbidden material %q present in panel payload %s", forbiddenMaterial, decodedPayload)
 		}
@@ -167,8 +167,8 @@ func TestPanelSessionPayloadContainsOnlySafeSessionClaims(t *testing.T) {
 }
 
 func TestPanelSessionUsesConfiguredSecretEnvNotTokenPepper(t *testing.T) {
-	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-secret")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-secret-pepper-secret-32bytes")
 	panel := testPanelFacadeWithSecretEnv("PANEL_SESSION_SECRET")
 	now := time.Unix(1700000000, 0)
 	token, err := IssuePanelSession(panel, "123456789", now)
@@ -182,10 +182,25 @@ func TestPanelSessionUsesConfiguredSecretEnvNotTokenPepper(t *testing.T) {
 	}
 }
 
+func TestPanelSessionRejectsFutureIssuedAndOverlongTTL(t *testing.T) {
+	panel := testPanelFacade(t)
+	now := time.Unix(1700000000, 0)
+	futureClaims := PanelSessionClaims{Issuer: panel.Session.Issuer, Audience: panel.Session.Audience, IssuedAt: now.Add(2 * time.Minute).Unix(), ExpiresAt: now.Add(panel.Session.TokenTTL).Unix(), TelegramActorID: "123456789"}
+	futureToken := signTestPanelSession(t, panel, futureClaims)
+	if _, err := ValidatePanelSession(panel, futureToken, now); err == nil {
+		t.Fatal("expected future-issued panel token to be rejected")
+	}
+	overlongClaims := PanelSessionClaims{Issuer: panel.Session.Issuer, Audience: panel.Session.Audience, IssuedAt: now.Unix(), ExpiresAt: now.Add(2 * panel.Session.TokenTTL).Unix(), TelegramActorID: "123456789"}
+	overlongToken := signTestPanelSession(t, panel, overlongClaims)
+	if _, err := ValidatePanelSession(panel, overlongToken, now); err == nil {
+		t.Fatal("expected overlong panel token lifetime to be rejected")
+	}
+}
+
 func testPanelFacade(t *testing.T) config.PanelFacadeConfig {
 	t.Helper()
-	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret")
-	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-secret")
+	t.Setenv("PANEL_SESSION_SECRET", "panel-session-secret-panel-session-32")
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-secret-pepper-secret-32bytes")
 	return testPanelFacadeWithSecretEnv("PANEL_SESSION_SECRET")
 }
 
@@ -225,5 +240,5 @@ func signTestPanelSession(t *testing.T, panel config.PanelFacadeConfig, claims P
 		t.Fatal(err)
 	}
 	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
-	return "panel_" + encodedPayload + "." + signPanelSession(encodedPayload, []byte("panel-session-secret"))
+	return "panel_" + encodedPayload + "." + signPanelSession(encodedPayload, []byte("panel-session-secret-panel-session-32"))
 }

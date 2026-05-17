@@ -155,7 +155,7 @@ func copyHeader(dst, src http.Header, publicSub bool, allowed []string) {
 	allowedSet := lowerSet(allowed)
 	for k, vals := range src {
 		lower := strings.ToLower(k)
-		if lower == "set-cookie" || lower == "authorization" || strings.HasPrefix(lower, "x-debug") {
+		if protectedResponseHeader(lower) {
 			continue
 		}
 		if publicSub && !allowedSet[lower] {
@@ -166,6 +166,19 @@ func copyHeader(dst, src http.Header, publicSub bool, allowed []string) {
 		}
 	}
 	rghttp.StripHopByHop(dst)
+}
+
+func protectedResponseHeader(name string) bool {
+	lower := strings.ToLower(name)
+	if lower == "set-cookie" || lower == "authorization" || lower == "proxy-authenticate" || lower == "location" || strings.HasPrefix(lower, "x-debug") {
+		return true
+	}
+	switch lower {
+	case "connection", "proxy-connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade":
+		return true
+	default:
+		return false
+	}
 }
 
 func filterHeaders(h http.Header, allowed []string) {
