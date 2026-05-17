@@ -9,6 +9,7 @@ remnaguard.yaml
 .env
 .env.*
 .local/
+.sisyphus/
 PLAN.md
 REFACTORING_PLAN.md
 PRIVATE_*.md

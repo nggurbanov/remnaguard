@@ -16,14 +16,15 @@ import (
 )
 
 type Event struct {
-	Name      string
-	Method    string
-	Path      string
-	Route     string
-	TokenID   string
-	Reason    string
-	Status    int
-	CreatedAt time.Time
+	Name        string
+	Method      string
+	Path        string
+	Route       string
+	TokenID     string
+	Reason      string
+	Status      int
+	HasAuthHint bool
+	CreatedAt   time.Time
 }
 
 type Manager struct {
@@ -76,7 +77,7 @@ func (m *Manager) Notify(event Event) {
 	m.mu.Lock()
 	enabled := m.cfg.Enabled && m.cfg.Telegram.Enabled && event.Name == "request_denied"
 	m.mu.Unlock()
-	if !enabled {
+	if !enabled || suppressEvent(event) {
 		return
 	}
 	if event.CreatedAt.IsZero() {
@@ -191,6 +192,16 @@ func alertKey(ev Event) string {
 	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
 }
 
+func suppressEvent(ev Event) bool {
+	if ev.HasAuthHint || ev.TokenID != "" {
+		return false
+	}
+	if ev.Route == "" && ev.Reason == "unknown_route" && ev.Status == http.StatusNotFound {
+		return true
+	}
+	return strings.HasPrefix(ev.Route, "sub.") && ev.Reason == "public_subscriptions_disabled" && ev.Status == http.StatusForbidden
+}
+
 func (m *Manager) send(b bucket) {
 	m.mu.Lock()
 	cfg := m.cfg
@@ -262,7 +273,7 @@ func formatMessage(b bucket) string {
 		icon,
 		emptyDash(b.event.TokenID),
 		emptyDash(b.event.Method),
-		emptyDash(b.event.Path),
+		emptyDash(redactAlertPath(b.event.Path)),
 		emptyDash(b.event.Route),
 		emptyDash(b.event.Reason),
 		b.event.Status,
@@ -271,6 +282,18 @@ func formatMessage(b bucket) string {
 		b.first.UTC().Format("2006-01-02 15:04:05"),
 		b.last.UTC().Format("2006-01-02 15:04:05"),
 	)
+}
+
+func redactAlertPath(path string) string {
+	if path == "" {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) < 4 || parts[1] != "api" || parts[2] != "sub" || parts[3] == "" {
+		return path
+	}
+	parts[3] = "<redacted>"
+	return strings.Join(parts, "/")
 }
 
 func emptyDash(value string) string {

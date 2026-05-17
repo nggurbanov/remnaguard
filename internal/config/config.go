@@ -557,7 +557,7 @@ func validateHTTPSURL(raw, field string) error {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("%s must be absolute", field)
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
+	if u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(u.Hostname())) {
 		return fmt.Errorf("%s must be https unless localhost http", field)
 	}
 	return nil
