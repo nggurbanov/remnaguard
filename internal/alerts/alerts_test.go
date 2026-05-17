@@ -267,7 +267,7 @@ func TestTelegramAlertSuppressesUnauthenticatedUnknownRoute(t *testing.T) {
 	}
 }
 
-func TestTelegramAlertSendsAuthenticatedUnknownRoute(t *testing.T) {
+func TestTelegramAlertSuppressesAuthenticatedUnknownRoute(t *testing.T) {
 	requests := make(chan map[string]string, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]string
@@ -306,19 +306,9 @@ func TestTelegramAlertSendsAuthenticatedUnknownRoute(t *testing.T) {
 	})
 
 	select {
-	case payload := <-requests:
-		text := payload["text"]
-		for _, want := range []string{
-			"path: /api/new-remnawave-route",
-			"reason: unknown_route",
-			"status: 404",
-		} {
-			if !strings.Contains(text, want) {
-				t.Fatalf("message missing %q in:\n%s", want, text)
-			}
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for authenticated unknown_route telegram request")
+	case <-requests:
+		t.Fatal("expected authenticated unknown_route denial to be suppressed")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 

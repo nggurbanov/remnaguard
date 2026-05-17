@@ -193,11 +193,11 @@ func alertKey(ev Event) string {
 }
 
 func suppressEvent(ev Event) bool {
-	if ev.HasAuthHint || ev.TokenID != "" {
-		return false
-	}
 	if ev.Route == "" && ev.Reason == "unknown_route" && ev.Status == http.StatusNotFound {
 		return true
+	}
+	if ev.HasAuthHint || ev.TokenID != "" {
+		return false
 	}
 	return strings.HasPrefix(ev.Route, "sub.") && ev.Reason == "public_subscriptions_disabled" && ev.Status == http.StatusForbidden
 }
