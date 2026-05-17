@@ -406,7 +406,7 @@ func TestTelegramAlertSendsAuthenticatedDisabledPublicSubscription(t *testing.T)
 	case payload := <-requests:
 		text := payload["text"]
 		for _, want := range []string{
-			"path: /api/sub/new-client/info",
+			"path: /api/sub/<redacted>/info",
 			"route: sub.client",
 			"reason: public_subscriptions_disabled",
 			"status: 403",
@@ -414,6 +414,9 @@ func TestTelegramAlertSendsAuthenticatedDisabledPublicSubscription(t *testing.T)
 			if !strings.Contains(text, want) {
 				t.Fatalf("message missing %q in:\n%s", want, text)
 			}
+		}
+		if strings.Contains(text, "new-client") {
+			t.Fatalf("message leaked subscription path segment:\n%s", text)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for authenticated disabled public subscription telegram request")

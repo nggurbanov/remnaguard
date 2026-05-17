@@ -273,7 +273,7 @@ func formatMessage(b bucket) string {
 		icon,
 		emptyDash(b.event.TokenID),
 		emptyDash(b.event.Method),
-		emptyDash(b.event.Path),
+		emptyDash(redactAlertPath(b.event.Path)),
 		emptyDash(b.event.Route),
 		emptyDash(b.event.Reason),
 		b.event.Status,
@@ -282,6 +282,18 @@ func formatMessage(b bucket) string {
 		b.first.UTC().Format("2006-01-02 15:04:05"),
 		b.last.UTC().Format("2006-01-02 15:04:05"),
 	)
+}
+
+func redactAlertPath(path string) string {
+	if path == "" {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) < 4 || parts[1] != "api" || parts[2] != "sub" || parts[3] == "" {
+		return path
+	}
+	parts[3] = "<redacted>"
+	return strings.Join(parts, "/")
 }
 
 func emptyDash(value string) string {
