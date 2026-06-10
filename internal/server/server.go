@@ -348,7 +348,7 @@ func (r *Runtime) apiHandler() http.Handler {
 			disablePanelCacheHeaders(upstreamRes.Header)
 		}
 		st.proxy.WriteResponse(w, upstreamRes, false)
-		r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", upstreamRes.StatusCode))
+		r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, auditSafePath(path), 0, panelAuditFields(req, "", upstreamRes.StatusCode))
 	})
 }
 
@@ -976,7 +976,7 @@ func (r *Runtime) handlePanelRestrictedUserList(w http.ResponseWriter, req *http
 		}
 		if res.StatusCode < 200 || res.StatusCode >= 300 {
 			st.proxy.WriteResponse(w, res, false)
-			r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", res.StatusCode))
+			r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, auditSafePath(path), 0, panelAuditFields(req, "", res.StatusCode))
 			return true
 		}
 		users, total, err := decodeUserListPage(res.Body)
@@ -1005,7 +1005,7 @@ func (r *Runtime) handlePanelRestrictedUserList(w http.ResponseWriter, req *http
 	}
 	disablePanelCacheHeaders(res.Header)
 	st.proxy.WriteResponse(w, res, false)
-	r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, path, 0, panelAuditFields(req, "", http.StatusOK))
+	r.audit.EmitRequestFields("proxy_allowed", route.Name, tok.ID, cred.ID, "ok", req.Method, auditSafePath(path), 0, panelAuditFields(req, "", http.StatusOK))
 	return true
 }
 
@@ -1080,7 +1080,7 @@ func (r *Runtime) handlePanelPolicyDeny(w http.ResponseWriter, req *http.Request
 	}
 	method, path := safeRequestContext(req)
 	status := panelPolicyDenyStatus(req.Method, route, path)
-	r.audit.EmitRequestFields("request_denied", route.Name, tok.ID, cred.ID, reason, method, path, status, panelAuditFields(req, "policy_deny", 0))
+	r.audit.EmitRequestFields("request_denied", route.Name, tok.ID, cred.ID, reason, method, auditSafePath(path), status, panelAuditFields(req, "policy_deny", 0))
 	disablePanelCacheHeaders(w.Header())
 	if req.Method == http.MethodGet {
 		writeJSON(w, status, panelSafeReadDenyBody(route, path, status, reason))
@@ -1402,9 +1402,8 @@ func (r *Runtime) localHandler() http.Handler {
 
 func (r *Runtime) deny(w http.ResponseWriter, req *http.Request, route, tokenID, credentialID, reason string, status int) {
 	method, path := safeRequestContext(req)
-	auditPath := redactSensitiveAuditPath(path)
 	fields := panelAuditFields(req, "", 0)
-	r.audit.EmitRequestFields("request_denied", route, tokenID, credentialID, reason, method, auditPath, status, fields)
+	r.audit.EmitRequestFields("request_denied", route, tokenID, credentialID, reason, method, auditSafePath(path), status, fields)
 	r.alerts.Notify(alerts.Event{
 		Name:        "request_denied",
 		Method:      method,

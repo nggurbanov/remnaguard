@@ -1018,6 +1018,42 @@ func TestDenyAuditRedactsPublicSubscriptionPath(t *testing.T) {
 	}
 }
 
+func TestProxyAllowedAuditRedactsAuthenticatedSubscriptionPath(t *testing.T) {
+	const shortUUID = "audit-success-redaction"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sub/"+shortUUID+"/info" {
+			t.Fatalf("unexpected upstream path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"ok":true}}`))
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.PublicSubs.Enabled = false
+	cfg.Tokens[0].Scopes = append(cfg.Tokens[0].Scopes, "subscriptions:read")
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auditOut bytes.Buffer
+	rt.Audit().SetOutputForTest(&auditOut)
+	req := httptest.NewRequest(http.MethodGet, "/api/sub/"+shortUUID+"/info", nil)
+	req.RequestURI = "/api/sub/" + shortUUID + "/info"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d: %s", rec.Code, rec.Body.String())
+	}
+	events := decodeAuditEvents(t, auditOut.String())
+	last := events[len(events)-1]
+	assertAuditValue(t, last, "event", "proxy_allowed")
+	assertAuditValue(t, last, "path", "/api/sub/<redacted>/info")
+	if strings.Contains(auditOut.String(), shortUUID) {
+		t.Fatalf("raw subscription id leaked in audit output: %s", auditOut.String())
+	}
+}
+
 func TestRestrictedWriteDeniesTelegramIDAliasBeforeUpstream(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

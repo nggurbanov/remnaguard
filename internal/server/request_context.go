@@ -37,6 +37,10 @@ func redactSensitiveAuditPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
+func auditSafePath(path string) string {
+	return redactSensitiveAuditPath(path)
+}
+
 func contains(xs []string, want string) bool {
 	for _, x := range xs {
 		if x == want {
