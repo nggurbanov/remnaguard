@@ -33,25 +33,61 @@ func (s *Semaphore) Release() { <-s.ch }
 type PerKey struct {
 	mu sync.Mutex
 	n  int
-	m  map[string]*Semaphore
+	m  map[string]*perKeyEntry
 }
 
-func NewPerKey(n int) *PerKey { return &PerKey{n: n, m: map[string]*Semaphore{}} }
+type perKeyEntry struct {
+	sem    *Semaphore
+	active int
+}
+
+func NewPerKey(n int) *PerKey { return &PerKey{n: n, m: map[string]*perKeyEntry{}} }
 
 func (p *PerKey) Get(key string) *Semaphore {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.m[key] == nil {
-		p.m[key] = NewSemaphore(p.n)
+		p.m[key] = &perKeyEntry{sem: NewSemaphore(p.n)}
 	}
-	return p.m[key]
+	return p.m[key].sem
+}
+
+func (p *PerKey) Acquire(key string) (func(), bool) {
+	p.mu.Lock()
+	entry := p.m[key]
+	if entry == nil {
+		entry = &perKeyEntry{sem: NewSemaphore(p.n)}
+		p.m[key] = entry
+	}
+	if !entry.sem.Acquire() {
+		p.mu.Unlock()
+		return nil, false
+	}
+	entry.active++
+	p.mu.Unlock()
+	return func() {
+		entry.sem.Release()
+		p.mu.Lock()
+		entry.active--
+		if entry.active == 0 && p.m[key] == entry {
+			delete(p.m, key)
+		}
+		p.mu.Unlock()
+	}, true
+}
+
+func (p *PerKey) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.m)
 }
 
 type FixedWindow struct {
-	mu      sync.Mutex
-	limit   int
-	window  time.Duration
-	buckets map[string]bucket
+	mu        sync.Mutex
+	limit     int
+	window    time.Duration
+	buckets   map[string]bucket
+	lastPrune time.Time
 }
 
 type bucket struct {
@@ -71,12 +107,23 @@ func NewFixedWindow(spec string) (*FixedWindow, error) {
 }
 
 func (f *FixedWindow) Allow(key string) bool {
+	return f.allowAt(key, time.Now())
+}
+
+func (f *FixedWindow) allowAt(key string, now time.Time) bool {
 	if f == nil {
 		return true
 	}
-	now := time.Now()
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.lastPrune.IsZero() || now.Sub(f.lastPrune) >= f.window {
+		for k, b := range f.buckets {
+			if !b.start.IsZero() && now.Sub(b.start) >= f.window {
+				delete(f.buckets, k)
+			}
+		}
+		f.lastPrune = now
+	}
 	b := f.buckets[key]
 	if b.start.IsZero() || now.Sub(b.start) >= f.window {
 		f.buckets[key] = bucket{start: now, count: 1}

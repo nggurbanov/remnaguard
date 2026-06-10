@@ -68,6 +68,11 @@ Restricted write support covers:
 - `POST /api/users` with pre-upstream username, squad, subscription page config, traffic, description, email, Telegram, and field constraints plus post-write ownership verification;
 - `PATCH /api/users` with existing-user ownership preflight, body constraints, and post-write verification;
 - selected user actions: disable, enable, reset traffic, revoke;
-- HWID create/delete/delete-all with user ownership preflight and `hwid:write`.
+- HWID create/delete/delete-all with user ownership preflight and `hwid:write`;
+- config profile create/update when `config-profiles:write` is paired with `allowed_config_profiles` or `allow_all_config_profiles`;
+- host create/update when `hosts:write` is paired with `allowed_hosts` or `allow_all_hosts`;
+- node create/update and selected node actions when `nodes:write` is paired with `allowed_nodes` or `allow_all_nodes`;
+- subscription template update when `subscription-templates:write` is paired with `allowed_subscription_templates`;
+- internal/external squad update when the matching write scope is paired with `allowed_writable_internal_squads` or `allowed_writable_external_squads`.
 
-Bulk user changes, squad writes, subscription page writes, node/host/infrastructure writes, token management, and admin management stay privileged.
+Bulk user changes, subscription page writes, token management, admin management, and any route not explicitly listed above stay privileged.

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nggurbanov/remnaguard/internal/ratelimit"
+	"github.com/nggurbanov/remnaguard/internal/routes"
 	"gopkg.in/yaml.v3"
 )
 
@@ -381,6 +382,7 @@ func (c *Config) Validate() error {
 	}
 	credIDs := map[string]bool{}
 	tokenIDs := map[string]bool{}
+	allowedRequestFieldRoutes := allowedRequestFieldRouteKeys(c.Compatibility.EffectiveVersion())
 	for _, tok := range c.Tokens {
 		if tok.ID == "" {
 			return errors.New("token id is required")
@@ -411,6 +413,9 @@ func (c *Config) Validate() error {
 			if strings.TrimSpace(routeName) == "" {
 				return fmt.Errorf("empty allowed_request_fields route on token %q", tok.ID)
 			}
+			if !allowedRequestFieldRoutes[routeName] {
+				return fmt.Errorf("unknown allowed_request_fields route %q on token %q", routeName, tok.ID)
+			}
 			if len(fields) == 0 {
 				return fmt.Errorf("empty allowed_request_fields for route %q on token %q", routeName, tok.ID)
 			}
@@ -436,6 +441,15 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func allowedRequestFieldRouteKeys(version string) map[string]bool {
+	keys := map[string]bool{}
+	for _, route := range routes.Catalog(version) {
+		keys[route.Name] = true
+		keys[route.Method+" "+route.Pattern] = true
+	}
+	return keys
 }
 
 func validateRestrictedWriteAllowlists(tok TokenPolicy) error {

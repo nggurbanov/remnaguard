@@ -174,6 +174,92 @@ func TestReloadRerunsVersionDetection(t *testing.T) {
 	}
 }
 
+func TestAllowedVersionMismatchAllowsReadsButDeniesRestrictedWrites(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	var writes int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/system/metadata" {
+			_, _ = w.Write([]byte(`{"version":"2.8.0"}`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			writes++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":[]}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Compatibility.AssumeVersion = ""
+	cfg.Compatibility.AllowVersionMismatch = true
+	cfg.Upstream.VersionPath = "/api/system/metadata"
+	cfg.WriteSafety.SingleWriter = true
+	cfg.WriteSafety.EnableRestrictedWrites = true
+	cfg.Tokens[0].Scopes = []string{"users:read", "users:create"}
+	cfg.Tokens[0].Constraints.UsernamePrefix = "restricted-"
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.detectVersion(context.Background(), rt.state.Load())
+	if !rt.state.Load().versionOK.Load() || !rt.state.Load().versionMismatchAllowed.Load() {
+		t.Fatal("expected allowed mismatch to open readiness with mismatch flag")
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	readReq.RequestURI = "/api/users"
+	readReq.Header.Set("Authorization", "Bearer rg_cred.secret")
+	readRec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("safe read got %d: %s", readRec.Code, readRec.Body.String())
+	}
+
+	writeReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"restricted-new"}`))
+	writeReq.RequestURI = "/api/users"
+	writeReq.Header.Set("Authorization", "Bearer rg_cred.secret")
+	writeReq.Header.Set("Content-Type", "application/json")
+	writeRec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(writeRec, writeReq)
+	if writeRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("restricted write got %d: %s", writeRec.Code, writeRec.Body.String())
+	}
+	if writes != 0 {
+		t.Fatal("restricted write reached upstream during version mismatch")
+	}
+}
+
+func TestVersionMismatchWithoutAllowKeepsGuardClosed(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/system/metadata" {
+			_, _ = w.Write([]byte(`{"version":"2.8.0"}`))
+			return
+		}
+		t.Fatal("guarded request should not reach upstream")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Compatibility.AssumeVersion = ""
+	cfg.Upstream.VersionPath = "/api/system/metadata"
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.detectVersion(context.Background(), rt.state.Load())
+	if rt.state.Load().versionOK.Load() {
+		t.Fatal("version guard should remain closed on disallowed mismatch")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	req.RequestURI = "/api/users"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected version guard, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRequestUsesSingleRuntimeStateAcrossReload(t *testing.T) {
 	releaseOld := make(chan struct{})
 	oldUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -845,6 +931,38 @@ func TestRestrictedWriteDeniedWithoutExactScope(t *testing.T) {
 	}
 }
 
+func TestKeyedLockerSerializesAndEvicts(t *testing.T) {
+	var locks keyedLocker
+	unlock := locks.Lock("same")
+	entered := make(chan struct{})
+	released := make(chan struct{})
+	go func() {
+		unlockSecond := locks.Lock("same")
+		close(entered)
+		unlockSecond()
+		close(released)
+	}()
+	select {
+	case <-entered:
+		t.Fatal("same key lock was not serialized")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if locks.Len() != 1 {
+		t.Fatalf("expected one lock entry, got %d", locks.Len())
+	}
+	unlock()
+	<-entered
+	<-released
+	if locks.Len() != 0 {
+		t.Fatalf("expected lock entry to be evicted, got %d", locks.Len())
+	}
+
+	unlockA := locks.Lock("a")
+	unlockB := locks.Lock("b")
+	unlockA()
+	unlockB()
+}
+
 func TestTokenSpecificAllowedRequestFields(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -868,6 +986,35 @@ func TestTokenSpecificAllowedRequestFields(t *testing.T) {
 	rt.apiHandler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected request field denial, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDenyAuditRedactsPublicSubscriptionPath(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("disabled public subscription request must not reach upstream")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.PublicSubs.Enabled = false
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var auditOut bytes.Buffer
+	rt.Audit().SetOutputForTest(&auditOut)
+	req := httptest.NewRequest(http.MethodGet, "/api/sub/audit-redaction-test/info", nil)
+	req.RequestURI = "/api/sub/audit-redaction-test/info"
+	rec := httptest.NewRecorder()
+	rt.apiHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden, got %d: %s", rec.Code, rec.Body.String())
+	}
+	events := decodeAuditEvents(t, auditOut.String())
+	last := events[len(events)-1]
+	assertAuditValue(t, last, "event", "request_denied")
+	assertAuditValue(t, last, "path", "/api/sub/<redacted>/info")
+	if strings.Contains(auditOut.String(), "audit-redaction-test") {
+		t.Fatalf("raw subscription id leaked in audit output: %s", auditOut.String())
 	}
 }
 

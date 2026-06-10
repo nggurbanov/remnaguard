@@ -237,6 +237,12 @@ func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
 		{name: "bad username regex", edit: func(tok *TokenPolicy) { tok.Constraints.UsernameRegex = "[" }},
 		{name: "bad telegram range", edit: func(tok *TokenPolicy) { tok.Constraints.TelegramIDRanges = []IDRange{{Min: 10, Max: 1}} }},
 		{name: "empty request fields", edit: func(tok *TokenPolicy) { tok.Constraints.AllowedRequestFields = map[string][]string{"user.create": {}} }},
+		{name: "unknown request field route name", edit: func(tok *TokenPolicy) {
+			tok.Constraints.AllowedRequestFields = map[string][]string{"user.cretae": {"username"}}
+		}},
+		{name: "unknown request field route alias", edit: func(tok *TokenPolicy) {
+			tok.Constraints.AllowedRequestFields = map[string][]string{"POST /api/not-real": {"username"}}
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Defaults()
@@ -252,6 +258,27 @@ func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
 				t.Fatal("expected invalid extended constraint to be rejected")
 			}
 		})
+	}
+}
+
+func TestValidateAcceptsAllowedRequestFieldsRouteKeys(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	for _, fields := range []map[string][]string{
+		{"user.create": {"username"}},
+		{"POST /api/users": {"username"}},
+	} {
+		cfg := Defaults()
+		cfg.Upstream.BaseURL = "https://example.test"
+		cfg.Upstream.Bearer = "root"
+		cfg.Tokens = []TokenPolicy{{
+			ID:          "tenant-a",
+			Scopes:      []string{"users:read"},
+			Credentials: []Credential{{ID: "cred", HMACSHA256: "digest"}},
+			Constraints: Constraints{AllowedRequestFields: fields},
+		}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected allowed_request_fields route key to be accepted: %v", err)
+		}
 	}
 }
 

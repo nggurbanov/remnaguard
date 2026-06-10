@@ -1,4 +1,4 @@
-.PHONY: test vet lint race fuzz build validate route-check docker contract-local
+.PHONY: test vet lint race fuzz vuln build validate route-check docker contract-local
 
 test:
 	go test ./...
@@ -15,6 +15,9 @@ vet:
 
 lint:
 	golangci-lint run
+
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 build:
 	go build -trimpath -ldflags "-s -w" ./cmd/remnaguard

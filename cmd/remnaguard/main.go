@@ -91,23 +91,40 @@ func serve(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	sigHUP := make(chan os.Signal, 1)
-	signal.Notify(sigHUP, syscall.SIGHUP)
-	go func() {
-		for range sigHUP {
-			next, err := config.Load(*cfgPath)
-			if err != nil {
-				rt.Audit().Emit("reload_rejected", "", "", "", "invalid_config", 0)
-				continue
-			}
-			if err := rt.Reload(next); err != nil {
-				rt.Audit().Emit("reload_rejected", "", "", "", "invalid_config", 0)
-				continue
-			}
-			rt.Audit().Emit("reload_applied", "", "", "", "ok", 0)
-		}
-	}()
+	if cfg.Reload.SIGHUP {
+		sigHUP := make(chan os.Signal, 1)
+		signal.Notify(sigHUP, syscall.SIGHUP)
+		defer signal.Stop(sigHUP)
+		go runSIGHUPReloadLoop(ctx, sigHUP, func() (*config.Config, error) {
+			return config.Load(*cfgPath)
+		}, rt.Reload, func(event, reason string) {
+			rt.Audit().Emit(event, "", "", "", reason, 0)
+		})
+	}
 	return rt.Serve(ctx)
+}
+
+func runSIGHUPReloadLoop(ctx context.Context, signals <-chan os.Signal, load func() (*config.Config, error), reload func(*config.Config) error, emit func(event, reason string)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-signals:
+			if !ok {
+				return
+			}
+			next, err := load()
+			if err != nil {
+				emit("reload_rejected", "invalid_config")
+				continue
+			}
+			if err := reload(next); err != nil {
+				emit("reload_rejected", "invalid_config")
+				continue
+			}
+			emit("reload_applied", "ok")
+		}
+	}
 }
 
 func validate(args []string) error {
@@ -423,7 +440,9 @@ func writeTokenFileWithValidation(path string, doc *tokenDoc, cfgPath string) er
 		return err
 	}
 	var backup string
+	existed := false
 	if _, err := os.Stat(path); err == nil {
+		existed = true
 		backup = fmt.Sprintf("%s.%s.bak", path, time.Now().UTC().Format("20060102T150405Z"))
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -432,6 +451,8 @@ func writeTokenFileWithValidation(path string, doc *tokenDoc, cfgPath string) er
 		if err := os.WriteFile(backup, b, 0600); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	b, err := yaml.Marshal(doc)
 	if err != nil {
@@ -463,7 +484,11 @@ func writeTokenFileWithValidation(path string, doc *tokenDoc, cfgPath string) er
 	}
 	if _, err := config.Load(cfgPath); err != nil {
 		if backup != "" {
-			_ = os.Rename(backup, path)
+			if restoreErr := os.Rename(backup, path); restoreErr != nil {
+				return fmt.Errorf("validation failed after token edit: %w; backup restore failed: %v", err, restoreErr)
+			}
+		} else if !existed {
+			_ = os.Remove(path)
 		}
 		return fmt.Errorf("validation failed after token edit: %w", err)
 	}
