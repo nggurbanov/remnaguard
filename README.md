@@ -65,7 +65,7 @@ compatibility:
   allow_version_mismatch: false
 ```
 
-`allow_version_mismatch` нельзя использовать, чтобы считать writes/actions policy-enforced для restricted tokens.
+`allow_version_mismatch` позволяет обслуживать safe reads, если version detection успешно вернул другую версию Remnawave. Restricted writes/actions остаются заблокированы version guard; для осознанного pin catalog behavior в isolated environments используйте более сильный override `assume_version`.
 
 ## Security Defaults
 
@@ -177,7 +177,7 @@ compatibility:
   allow_version_mismatch: false
 ```
 
-`allow_version_mismatch` must not be used to treat writes or actions as policy-enforced for restricted tokens.
+`allow_version_mismatch` lets RemnaGuard serve safe reads after version detection succeeds but reports a different Remnawave version. It does not allow restricted writes/actions to become policy-enforced; those remain blocked by the version guard. `assume_version` is the stronger operator override for intentionally pinning catalog behavior in isolated environments.
 
 ## Security Defaults
 
