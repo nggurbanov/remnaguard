@@ -189,6 +189,7 @@ type Constraints struct {
 	TelegramIDRanges               []IDRange           `yaml:"telegram_id_ranges" json:"telegram_id_ranges"`
 	AllowedInternalSquads          []string            `yaml:"allowed_internal_squads" json:"allowed_internal_squads"`
 	AllowedExternalSquads          []string            `yaml:"allowed_external_squads" json:"allowed_external_squads"`
+	AllowUnassignedUserReads       bool                `yaml:"allow_unassigned_user_reads" json:"allow_unassigned_user_reads"`
 	AllowedUsers                   []string            `yaml:"allowed_users" json:"allowed_users"`
 	AllowedConfigProfiles          []string            `yaml:"allowed_config_profiles" json:"allowed_config_profiles"`
 	AllowedHosts                   []string            `yaml:"allowed_hosts" json:"allowed_hosts"`
@@ -405,6 +406,17 @@ func (c *Config) Validate() error {
 		for _, r := range tok.Constraints.TelegramIDRanges {
 			if r.Min < 0 || r.Max < r.Min {
 				return fmt.Errorf("invalid telegram_id_ranges on token %q", tok.ID)
+			}
+		}
+		if tok.Constraints.AllowUnassignedUserReads {
+			if strings.TrimSpace(tok.Constraints.UsernamePrefix) == "" {
+				return fmt.Errorf("allow_unassigned_user_reads requires username_prefix on token %q", tok.ID)
+			}
+			if len(tok.Constraints.TelegramIDRanges) == 0 {
+				return fmt.Errorf("allow_unassigned_user_reads requires telegram_id_ranges on token %q", tok.ID)
+			}
+			if len(tok.Constraints.AllowedExternalSquads) == 0 {
+				return fmt.Errorf("allow_unassigned_user_reads requires allowed_external_squads on token %q", tok.ID)
 			}
 		}
 		for routeName, fields := range tok.Constraints.AllowedRequestFields {

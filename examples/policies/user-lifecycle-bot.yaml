@@ -13,6 +13,10 @@ tokens:
       - hwid:write
     constraints:
       username_prefix: "tenant-a-"
+      telegram_id_ranges:
+        - min: 1000000000000000
+          max: 1000999999999999
+      allow_unassigned_user_reads: true
       email_domains:
         - "example.com"
       allowed_internal_squads:

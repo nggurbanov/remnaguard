@@ -75,6 +75,101 @@ func TestEmptyUserReadResponsePassesThrough(t *testing.T) {
 	}
 }
 
+func TestSingletonUserReadAllowsOptedInUnassignedTenantUser(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"tenant-user","username":"restricted-alice","telegramId":150}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Constraints = config.Constraints{
+		UsernamePrefix:           "restricted-",
+		TelegramIDRanges:         []config.IDRange{{Min: 100, Max: 200}},
+		AllowedExternalSquads:    []string{"external-a"},
+		AllowUnassignedUserReads: true,
+	}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/by-telegram-id/150", nil)
+	req.RequestURI = "/api/users/by-telegram-id/150"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+
+	rt.apiHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected opted-in unassigned tenant user read, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSingletonUserReadDeniesUnassignedTenantUserWithoutOptIn(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"tenant-user","username":"restricted-alice","telegramId":150}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Constraints = config.Constraints{
+		UsernamePrefix:        "restricted-",
+		TelegramIDRanges:      []config.IDRange{{Min: 100, Max: 200}},
+		AllowedExternalSquads: []string{"external-a"},
+	}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/by-telegram-id/150", nil)
+	req.RequestURI = "/api/users/by-telegram-id/150"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+
+	rt.apiHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected unassigned user read to require opt-in, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSingletonUserReadDeniesForeignUnassignedUserWithOptIn(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"uuid":"foreign-user","username":"foreign-alice","telegramId":150}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Constraints = config.Constraints{
+		UsernamePrefix:           "restricted-",
+		TelegramIDRanges:         []config.IDRange{{Min: 100, Max: 200}},
+		AllowedExternalSquads:    []string{"external-a"},
+		AllowUnassignedUserReads: true,
+	}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/by-telegram-id/150", nil)
+	req.RequestURI = "/api/users/by-telegram-id/150"
+	req.Header.Set("Authorization", "Bearer rg_cred.secret")
+	rec := httptest.NewRecorder()
+
+	rt.apiHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected foreign unassigned user to stay denied, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPrivilegedRepresentativeRoutesProxy(t *testing.T) {
 	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
 	var seen []string

@@ -11,6 +11,8 @@ import (
 	"github.com/nggurbanov/remnaguard/internal/config"
 )
 
+var errMissingExternalSquad = errors.New("missing_external_squad")
+
 type User struct {
 	UUID                       string          `json:"uuid"`
 	ShortUUID                  string          `json:"shortUuid"`
@@ -167,7 +169,7 @@ func OwnsUser(tok *config.TokenPolicy, user User) error {
 	}
 	if len(c.AllowedExternalSquads) > 0 {
 		if len(external) == 0 {
-			return errors.New("missing_external_squad")
+			return errMissingExternalSquad
 		}
 		if !squadsAllowed(external, c.AllowedExternalSquads) {
 			return errors.New("external_squad_denied")
@@ -182,6 +184,20 @@ func OwnsUser(tok *config.TokenPolicy, user User) error {
 		}
 	}
 	return nil
+}
+
+// OwnsUserForExactRead permits an explicitly scoped lifecycle token to repair
+// its own user when the external-squad assignment is the only missing evidence.
+func OwnsUserForExactRead(tok *config.TokenPolicy, user User) error {
+	err := OwnsUser(tok, user)
+	if err == nil || tok == nil || !tok.Constraints.AllowUnassignedUserReads || !errors.Is(err, errMissingExternalSquad) {
+		return err
+	}
+
+	readToken := *tok
+	readToken.Constraints = tok.Constraints
+	readToken.Constraints.AllowedExternalSquads = nil
+	return OwnsUser(&readToken, user)
 }
 
 func ValidateUsername(c config.Constraints, username string) error {

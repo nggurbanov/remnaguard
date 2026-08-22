@@ -237,6 +237,21 @@ func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
 		{name: "bad username regex", edit: func(tok *TokenPolicy) { tok.Constraints.UsernameRegex = "[" }},
 		{name: "bad telegram range", edit: func(tok *TokenPolicy) { tok.Constraints.TelegramIDRanges = []IDRange{{Min: 10, Max: 1}} }},
 		{name: "empty request fields", edit: func(tok *TokenPolicy) { tok.Constraints.AllowedRequestFields = map[string][]string{"user.create": {}} }},
+		{name: "unassigned reads without username prefix", edit: func(tok *TokenPolicy) {
+			tok.Constraints.AllowUnassignedUserReads = true
+			tok.Constraints.TelegramIDRanges = []IDRange{{Min: 100, Max: 200}}
+			tok.Constraints.AllowedExternalSquads = []string{"external-a"}
+		}},
+		{name: "unassigned reads without telegram range", edit: func(tok *TokenPolicy) {
+			tok.Constraints.AllowUnassignedUserReads = true
+			tok.Constraints.UsernamePrefix = "tenant-"
+			tok.Constraints.AllowedExternalSquads = []string{"external-a"}
+		}},
+		{name: "unassigned reads without external squad allowlist", edit: func(tok *TokenPolicy) {
+			tok.Constraints.AllowUnassignedUserReads = true
+			tok.Constraints.UsernamePrefix = "tenant-"
+			tok.Constraints.TelegramIDRanges = []IDRange{{Min: 100, Max: 200}}
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := Defaults()
@@ -252,6 +267,28 @@ func TestValidateRejectsInvalidExtendedConstraints(t *testing.T) {
 				t.Fatal("expected invalid extended constraint to be rejected")
 			}
 		})
+	}
+}
+
+func TestValidateAcceptsTenantScopedUnassignedUserReads(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	cfg := Defaults()
+	cfg.Upstream.BaseURL = "https://example.test"
+	cfg.Upstream.Bearer = "root"
+	cfg.Tokens = []TokenPolicy{{
+		ID:     "tenant-a",
+		Scopes: []string{"users:read"},
+		Constraints: Constraints{
+			UsernamePrefix:           "tenant-",
+			TelegramIDRanges:         []IDRange{{Min: 100, Max: 200}},
+			AllowedExternalSquads:    []string{"external-a"},
+			AllowUnassignedUserReads: true,
+		},
+		Credentials: []Credential{{ID: "cred", HMACSHA256: "digest"}},
+	}}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected tenant-scoped unassigned reads to be accepted: %v", err)
 	}
 }
 
