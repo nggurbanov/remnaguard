@@ -29,21 +29,22 @@ type Route struct {
 	BodyLimit         int64
 	BodyObject        bool
 	AllowedFields     []string
+	RequiredBoolean   string
 	Group             string
 	UnsupportedReason string
 	re                *regexp.Regexp
 }
 
 func Catalog(version string) []Route {
-	if version != "2.7.4" {
+	if version != "2.8.1" {
 		return nil
 	}
-	return compile(remnawave274Catalog())
+	return compile(remnawave281Catalog())
 }
 
-func remnawave274Catalog() []Route {
-	routes := make([]Route, 0, 185)
-	for _, line := range strings.Split(remnawave274Operations, "\n") {
+func remnawave281Catalog() []Route {
+	routes := make([]Route, 0, 186)
+	for _, line := range strings.Split(remnawave281Operations, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -82,6 +83,8 @@ func remnawave274Catalog() []Route {
 		{Name: "system.metadata", Method: http.MethodGet, Pattern: "/api/system/metadata", Support: PolicyEnforced, Scopes: []string{"metadata:read"}, Group: "metadata"},
 		{Name: "system.bandwidth", Method: http.MethodGet, Pattern: "/api/system/stats/bandwidth", Support: PolicyEnforced, Scopes: []string{"system:read"}, QueryAllowed: []string{"tz"}, Group: "bandwidth-stats"},
 		{Name: "system.stats", Method: http.MethodGet, Pattern: "/api/system/stats", Support: PolicyEnforced, Scopes: []string{"system:read"}, QueryAllowed: []string{"tz"}, Group: "system"},
+		{Name: "post.nodes.uuid.actions.restart", Method: http.MethodPost, Pattern: "/api/nodes/{uuid}/actions/restart", Support: Privileged, Scopes: []string{"remnawave:*"}, BodyLimit: 8192, BodyObject: true, AllowedFields: []string{"forceRestart"}, RequiredBoolean: "forceRestart", Group: "nodes"},
+		{Name: "post.nodes.actions.restart_all", Method: http.MethodPost, Pattern: "/api/nodes/actions/restart-all", Support: Privileged, Scopes: []string{"remnawave:*"}, BodyLimit: 8192, BodyObject: true, AllowedFields: []string{"forceRestart"}, RequiredBoolean: "forceRestart", Group: "nodes"},
 		{Name: "sub.info", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}/info", Support: PublicSubscription, Group: "subscriptions"},
 		{Name: "sub.base", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}", Support: PublicSubscription, Group: "subscriptions"},
 		{Name: "sub.client", Method: http.MethodGet, Pattern: "/api/sub/{shortUuid}/{clientType}", Support: PublicSubscription, Group: "subscriptions"},
@@ -109,7 +112,7 @@ func remnawave274Catalog() []Route {
 	return routes
 }
 
-const remnawave274Operations = `
+const remnawave281Operations = `
 DELETE /api/config-profiles/{uuid}
 DELETE /api/external-squads/{uuid}
 DELETE /api/external-squads/{uuid}/bulk-actions/remove-users
@@ -198,6 +201,7 @@ GET /api/system/stats/nodes
 GET /api/system/stats/recap
 GET /api/system/tools/x25519/generate
 GET /api/tokens
+GET /api/tokens/scopes
 GET /api/users
 GET /api/users/by-email/{email}
 GET /api/users/by-id/{id}
@@ -206,12 +210,14 @@ GET /api/users/by-tag/{tag}
 GET /api/users/by-telegram-id/{telegramId}
 GET /api/users/by-username/{username}
 GET /api/users/tags
+GET /api/users/stream
 GET /api/users/{uuid}
 GET /api/users/{uuid}/accessible-nodes
 GET /api/users/{uuid}/subscription-request-history
 PATCH /api/config-profiles
 PATCH /api/external-squads
 PATCH /api/hosts
+PATCH /api/hosts/bulk/update
 PATCH /api/infra-billing/nodes
 PATCH /api/infra-billing/providers
 PATCH /api/internal-squads
@@ -229,6 +235,7 @@ POST /api/auth/oauth2/authorize
 POST /api/auth/oauth2/callback
 POST /api/auth/passkey/authentication/verify
 POST /api/auth/register
+POST /api/bandwidth-stats/nodes/users
 POST /api/config-profiles
 POST /api/config-profiles/actions/reorder
 POST /api/external-squads
@@ -239,8 +246,6 @@ POST /api/hosts/actions/reorder
 POST /api/hosts/bulk/delete
 POST /api/hosts/bulk/disable
 POST /api/hosts/bulk/enable
-POST /api/hosts/bulk/set-inbound
-POST /api/hosts/bulk/set-port
 POST /api/hwid/devices
 POST /api/hwid/devices/delete
 POST /api/hwid/devices/delete-all
@@ -275,7 +280,6 @@ POST /api/subscription-page-configs/actions/reorder
 POST /api/subscription-templates
 POST /api/subscription-templates/actions/reorder
 POST /api/system/testers/srr-matcher
-POST /api/system/tools/happ/encrypt
 POST /api/tokens
 POST /api/users
 POST /api/users/bulk/all/extend-expiration-date

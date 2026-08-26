@@ -23,7 +23,7 @@ validate:
 	go run ./cmd/remnaguard validate -c configs/remnaguard.example.yaml
 
 route-check:
-	go run ./cmd/remnaguard routes check-openapi --spec internal/routes/testdata/remnawave-2.7.4-openapi-min.json --strict
+	go run ./cmd/remnaguard routes check-openapi --spec internal/routes/testdata/remnawave-2.8.1-openapi-min.json --strict
 
 docker:
 	docker build -t remnaguard:local .

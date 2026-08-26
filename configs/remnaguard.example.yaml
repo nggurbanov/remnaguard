@@ -13,7 +13,7 @@ upstream:
   extra_headers: {}
 
 compatibility:
-  remnawave_version: "2.7.4"
+  remnawave_version: "2.8.1"
   assume_version: ""
   allow_version_mismatch: false
 

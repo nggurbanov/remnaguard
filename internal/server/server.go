@@ -1232,7 +1232,7 @@ func effectiveRoute(cfg *config.Config, route routes.Route) routes.Route {
 		route.Scopes = []string{"config-profiles:write"}
 		route.BodyObject = true
 		route.BodyLimit = cfg.Limits.MaxBodyBytes
-	case "post.hosts", "patch.hosts":
+	case "post.hosts", "patch.hosts", "patch.hosts.bulk.update":
 		route.Support = routes.PolicyEnforced
 		route.Scopes = []string{"hosts:write"}
 		route.BodyObject = true
@@ -1338,7 +1338,7 @@ func userCreateFields() []string {
 
 func isRestrictedWrite(route routes.Route) bool {
 	switch route.Name {
-	case "user.create", "user.update", "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke", "hwid.create", "hwid.delete", "hwid.delete_all", "post.config_profiles", "patch.config_profiles", "post.hosts", "patch.hosts", "post.nodes", "patch.nodes", "post.nodes.uuid.actions.disable", "post.nodes.uuid.actions.enable", "post.nodes.uuid.actions.restart", "post.nodes.uuid.actions.reset_traffic", "patch.subscription_templates", "patch.internal_squads", "patch.external_squads":
+	case "user.create", "user.update", "user.actions.disable", "user.actions.enable", "user.actions.reset_traffic", "user.actions.revoke", "hwid.create", "hwid.delete", "hwid.delete_all", "post.config_profiles", "patch.config_profiles", "post.hosts", "patch.hosts", "patch.hosts.bulk.update", "post.nodes", "patch.nodes", "post.nodes.uuid.actions.disable", "post.nodes.uuid.actions.enable", "post.nodes.uuid.actions.restart", "post.nodes.uuid.actions.reset_traffic", "patch.subscription_templates", "patch.internal_squads", "patch.external_squads":
 		return true
 	default:
 		return false
@@ -1379,7 +1379,7 @@ func (r *Runtime) handlePublicSub(w http.ResponseWriter, req *http.Request, st *
 var errBodyTooLarge = errors.New("body_too_large")
 
 func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Route, tok *config.TokenPolicy) error {
-	if route.Support == routes.Privileged {
+	if route.Support == routes.Privileged && route.RequiredBoolean == "" {
 		return nil
 	}
 	if !route.BodyObject {
@@ -1407,6 +1407,16 @@ func validateBodyPolicy(req *http.Request, cfg *config.Config, route routes.Rout
 	if len(route.AllowedFields) > 0 {
 		if err := jsonpolicy.ValidateFields(obj, route.AllowedFields); err != nil {
 			return err
+		}
+	}
+	if route.RequiredBoolean != "" {
+		raw, ok := obj[route.RequiredBoolean]
+		if !ok {
+			return fmt.Errorf("missing_%s", strings.ToLower(route.RequiredBoolean))
+		}
+		var value bool
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &value) != nil {
+			return fmt.Errorf("invalid_%s", strings.ToLower(route.RequiredBoolean))
 		}
 	}
 	if err := validateTokenRequestFields(obj, route, tok); err != nil {
@@ -1473,6 +1483,21 @@ func validateResourceWriteConstraints(obj map[string]json.RawMessage, route rout
 		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedConfigProfiles, tok.Constraints.AllowAllConfigProfiles, "config_profile_denied")
 	case "patch.hosts":
 		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedHosts, tok.Constraints.AllowAllHosts, "host_denied")
+	case "patch.hosts.bulk.update":
+		raw, ok := obj["uuids"]
+		if !ok {
+			return fmt.Errorf("missing_uuids")
+		}
+		var uuids []string
+		if err := json.Unmarshal(raw, &uuids); err != nil || len(uuids) == 0 {
+			return fmt.Errorf("invalid_uuids")
+		}
+		for _, uuid := range uuids {
+			if err := requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedHosts, tok.Constraints.AllowAllHosts, "host_denied"); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "patch.nodes":
 		return requireAllowedUUIDOrAll(uuid, tok.Constraints.AllowedNodes, tok.Constraints.AllowAllNodes, "node_denied")
 	default:

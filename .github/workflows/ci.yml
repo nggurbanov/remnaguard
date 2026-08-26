@@ -21,7 +21,7 @@ jobs:
       - run: go test ./internal/httputil -fuzz=Fuzz -fuzztime=10s
       - run: go test ./internal/jsonpolicy -fuzz=Fuzz -fuzztime=10s
       - run: go vet ./...
-      - run: go run ./cmd/remnaguard routes check-openapi --spec internal/routes/testdata/remnawave-2.7.4-openapi-min.json --strict
+      - run: go run ./cmd/remnaguard routes check-openapi --spec internal/routes/testdata/remnawave-2.8.1-openapi-min.json --strict
 
   docker:
     runs-on: ubuntu-latest

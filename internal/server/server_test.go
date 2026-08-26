@@ -103,7 +103,7 @@ func TestPrivilegedRepresentativeRoutesProxy(t *testing.T) {
 		{http.MethodGet, "/api/config-profiles?page=1", nil},
 		{http.MethodGet, "/api/nodes", nil},
 		{http.MethodPatch, "/api/remnawave-settings", []byte(`{"anyDocumentedField":true}`)},
-		{http.MethodPost, "/api/system/tools/happ/encrypt", []byte(`{"payload":"x"}`)},
+		{http.MethodPost, "/api/bandwidth-stats/nodes/users?topUsersLimit=1&start=2026-01-01&end=2026-01-02", []byte(`{"nodeUuids":[]}`)},
 		{http.MethodPut, "/api/metadata/user/00000000-0000-0000-0000-000000000000", []byte(`{"k":"v"}`)},
 	} {
 		req := httptest.NewRequest(tc.method, tc.target, bytes.NewReader(tc.body))
@@ -145,7 +145,7 @@ func TestRestrictedCannotCallPrivilegedRoute(t *testing.T) {
 func TestReloadRerunsVersionDetection(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/system/metadata" {
-			_, _ = w.Write([]byte(`{"version":"2.7.4"}`))
+			_, _ = w.Write([]byte(`{"version":"2.8.1"}`))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -278,7 +278,7 @@ func TestOldVersionDetectionCannotCloseReloadedState(t *testing.T) {
 	go rt.detectVersion(context.Background(), oldState)
 
 	next := testConfig(oldUpstream.URL, "secret")
-	next.Compatibility.AssumeVersion = "2.7.4"
+	next.Compatibility.AssumeVersion = "2.8.1"
 	if err := rt.Reload(next); err != nil {
 		t.Fatal(err)
 	}
@@ -691,12 +691,13 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 	allowedTemplate := "96b9a516-7088-4ecf-8be4-ad6379dc5d60"
 	allowedSquad := "aaf5e518-22f7-4dcd-9b51-360a30696465"
 	allowedNode := "11111111-1111-4111-8111-111111111111"
+	allowedHost := "8d35c05e-93dc-4f0b-bcad-04fdcff0b1e0"
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/subscription-templates", "/api/internal-squads", "/api/nodes/" + allowedNode + "/actions/restart":
+		case "/api/subscription-templates", "/api/internal-squads", "/api/hosts/bulk/update", "/api/nodes/" + allowedNode + "/actions/restart":
 			_, _ = w.Write([]byte(`{"response":{"ok":true}}`))
 		default:
 			t.Fatalf("unexpected upstream path %q", r.URL.Path)
@@ -707,9 +708,10 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 	cfg := testConfig(upstream.URL, "secret")
 	cfg.WriteSafety.EnableRestrictedWrites = true
 	cfg.WriteSafety.SingleWriter = true
-	cfg.Tokens[0].Scopes = []string{"subscription-templates:write", "internal-squads:write", "nodes:write"}
+	cfg.Tokens[0].Scopes = []string{"subscription-templates:write", "internal-squads:write", "hosts:write", "nodes:write"}
 	cfg.Tokens[0].Constraints.AllowedSubscriptionTemplates = []string{allowedTemplate}
 	cfg.Tokens[0].Constraints.AllowedWritableInternalSquads = []string{allowedSquad}
+	cfg.Tokens[0].Constraints.AllowedHosts = []string{allowedHost}
 	cfg.Tokens[0].Constraints.AllowedNodes = []string{allowedNode}
 	rt, err := NewRuntime(cfg, "test", "")
 	if err != nil {
@@ -723,7 +725,8 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 	}{
 		{http.MethodPatch, "/api/subscription-templates", `{"uuid":"` + allowedTemplate + `","template":"x"}`},
 		{http.MethodPatch, "/api/internal-squads", `{"uuid":"` + allowedSquad + `","name":"core"}`},
-		{http.MethodPost, "/api/nodes/" + allowedNode + "/actions/restart", ``},
+		{http.MethodPatch, "/api/hosts/bulk/update", `{"uuids":["` + allowedHost + `"],"port":443}`},
+		{http.MethodPost, "/api/nodes/" + allowedNode + "/actions/restart", `{"forceRestart":false}`},
 	}
 	for _, item := range allowedRequests {
 		req := httptest.NewRequest(item.method, item.path, strings.NewReader(item.body))
@@ -746,6 +749,7 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 	}{
 		{http.MethodPatch, "/api/subscription-templates", `{"uuid":"23c544b0-2afe-49db-9311-e88b62306868","template":"x"}`},
 		{http.MethodPatch, "/api/internal-squads", `{"uuid":"14c9e79e-8a7e-4f9b-875c-7bbfa1904f0c","name":"foreign"}`},
+		{http.MethodPatch, "/api/hosts/bulk/update", `{"uuids":["90608694-c0ea-4d7b-a153-5c9a7769f624"],"port":443}`},
 		{http.MethodPost, "/api/nodes/22222222-2222-4222-8222-222222222222/actions/restart", ``},
 	}
 	for _, item := range deniedRequests {
@@ -763,6 +767,60 @@ func TestRestrictedInfraWritesEnforceResourceAllowlists(t *testing.T) {
 	}
 	if upstreamCalls != len(allowedRequests) {
 		t.Fatalf("denied writes reached upstream: got %d upstream calls, want %d", upstreamCalls, len(allowedRequests))
+	}
+}
+
+func TestNodeRestartsRequireAndForwardForceRestart(t *testing.T) {
+	t.Setenv("REMNAGUARD_TOKEN_PEPPER", "pepper-pepper-pepper-pepper-pepper-32")
+	var upstreamBodies []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		upstreamBodies = append(upstreamBodies, r.Method+" "+r.URL.Path+" "+string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":{"eventSent":true}}`))
+	}))
+	defer upstream.Close()
+
+	cfg := testConfig(upstream.URL, "secret")
+	cfg.Tokens[0].Scopes = []string{"remnawave:*"}
+	rt, err := NewRuntime(cfg, "test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		body   string
+		status int
+	}{
+		{name: "node restart requires field", path: "/api/nodes/11111111-1111-4111-8111-111111111111/actions/restart", body: `{}`, status: http.StatusBadRequest},
+		{name: "restart all requires field", path: "/api/nodes/actions/restart-all", body: `{}`, status: http.StatusBadRequest},
+		{name: "node restart requires boolean", path: "/api/nodes/11111111-1111-4111-8111-111111111111/actions/restart", body: `{"forceRestart":"false"}`, status: http.StatusBadRequest},
+		{name: "node restart forwards false", path: "/api/nodes/11111111-1111-4111-8111-111111111111/actions/restart", body: `{"forceRestart":false}`, status: http.StatusOK},
+		{name: "restart all forwards true", path: "/api/nodes/actions/restart-all", body: `{"forceRestart":true}`, status: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			req.RequestURI = tc.path
+			req.Header.Set("Authorization", "Bearer rg_cred.secret")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			rt.apiHandler().ServeHTTP(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
+			}
+		})
+	}
+	wantBodies := []string{
+		"POST /api/nodes/11111111-1111-4111-8111-111111111111/actions/restart {\"forceRestart\":false}",
+		"POST /api/nodes/actions/restart-all {\"forceRestart\":true}",
+	}
+	if !reflect.DeepEqual(upstreamBodies, wantBodies) {
+		t.Fatalf("upstream bodies = %#v, want %#v", upstreamBodies, wantBodies)
 	}
 }
 
@@ -2366,7 +2424,7 @@ func testConfig(upstreamURL, secret string) *config.Config {
 	cfg.Upstream.BaseURL = upstreamURL
 	cfg.Upstream.Bearer = "root"
 	cfg.Upstream.AllowInsecureHTTP = true
-	cfg.Compatibility.AssumeVersion = "2.7.4"
+	cfg.Compatibility.AssumeVersion = "2.8.1"
 	cfg.Audit.Stdout = false
 	cfg.Tokens = []config.TokenPolicy{{
 		ID:          "restricted",

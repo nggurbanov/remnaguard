@@ -8,6 +8,6 @@ Supported compatibility target:
 
 | RemnaGuard | Remnawave API |
 | --- | --- |
-| v1 baseline | 2.7.4 |
+| v1 baseline | 2.8.1 |
 
 RemnaGuard denies unsupported and mismatched upstream versions by default.

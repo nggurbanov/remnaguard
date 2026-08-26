@@ -51,7 +51,7 @@ func TestLocalStagingDestructiveContract(t *testing.T) {
 	cfg.Upstream.BaseURL = stagingProxy.URL
 	cfg.Upstream.Bearer = bearer
 	cfg.Upstream.AllowInsecureHTTP = true
-	cfg.Compatibility.AssumeVersion = "2.7.4"
+	cfg.Compatibility.AssumeVersion = "2.8.1"
 	cfg.Audit.Stdout = false
 	cfg.WriteSafety.EnableRestrictedWrites = true
 	cfg.WriteSafety.SingleWriter = true

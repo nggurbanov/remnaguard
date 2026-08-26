@@ -31,7 +31,7 @@ func TestReadOnlyRemnaGuardProxyContract(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Upstream.BaseURL = baseURL
 	cfg.Upstream.BearerEnv = "REMNAGUARD_CONTRACT_BEARER"
-	cfg.Compatibility.AssumeVersion = "2.7.4"
+	cfg.Compatibility.AssumeVersion = "2.8.1"
 	cfg.Audit.Stdout = false
 	cfg.Tokens = []config.TokenPolicy{{
 		ID:     "contract-privileged-readonly",
