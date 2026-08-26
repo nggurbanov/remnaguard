@@ -188,20 +188,6 @@ func cloneBucket(b *bucket) *bucket {
 	return &cp
 }
 
-func alertKey(ev Event) string {
-	return strings.Join([]string{emptyDash(ev.TokenID), emptyDash(ev.Route), emptyDash(ev.Reason), fmt.Sprint(ev.Status)}, "|")
-}
-
-func suppressEvent(ev Event) bool {
-	if ev.Route == "" && ev.Reason == "unknown_route" && ev.Status == http.StatusNotFound {
-		return true
-	}
-	if ev.HasAuthHint || ev.TokenID != "" {
-		return false
-	}
-	return strings.HasPrefix(ev.Route, "sub.") && ev.Reason == "public_subscriptions_disabled" && ev.Status == http.StatusForbidden
-}
-
 func (m *Manager) send(b bucket) {
 	m.mu.Lock()
 	cfg := m.cfg
@@ -252,60 +238,4 @@ func sendTelegram(ctx context.Context, client *http.Client, baseURL, token, chat
 		return fmt.Errorf("telegram status %d", res.StatusCode)
 	}
 	return nil
-}
-
-func formatMessage(b bucket) string {
-	icon := "🚨"
-	if b.event.Status == http.StatusTooManyRequests {
-		icon = "⚠️"
-	}
-	return fmt.Sprintf(
-		"%s RemnaGuard deny\n\n"+
-			"token: %s\n"+
-			"method: %s\n"+
-			"path: %s\n"+
-			"route: %s\n"+
-			"reason: %s\n"+
-			"status: %d\n\n"+
-			"count: %d in %s\n"+
-			"first: %s UTC\n"+
-			"last: %s UTC",
-		icon,
-		emptyDash(b.event.TokenID),
-		emptyDash(b.event.Method),
-		emptyDash(redactAlertPath(b.event.Path)),
-		emptyDash(b.event.Route),
-		emptyDash(b.event.Reason),
-		b.event.Status,
-		b.count,
-		roundDuration(b.last.Sub(b.first)),
-		b.first.UTC().Format("2006-01-02 15:04:05"),
-		b.last.UTC().Format("2006-01-02 15:04:05"),
-	)
-}
-
-func redactAlertPath(path string) string {
-	if path == "" {
-		return path
-	}
-	parts := strings.Split(path, "/")
-	if len(parts) < 4 || parts[1] != "api" || parts[2] != "sub" || parts[3] == "" {
-		return path
-	}
-	parts[3] = "<redacted>"
-	return strings.Join(parts, "/")
-}
-
-func emptyDash(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "-"
-	}
-	return value
-}
-
-func roundDuration(d time.Duration) time.Duration {
-	if d < time.Second {
-		return 0
-	}
-	return d.Round(time.Second)
 }
