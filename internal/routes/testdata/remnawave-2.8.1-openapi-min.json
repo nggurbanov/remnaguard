@@ -64,6 +64,9 @@
     "/api/users/tags": {
       "get": {}
     },
+    "/api/users/stream": {
+      "get": {}
+    },
     "/api/users/{uuid}/accessible-nodes": {
       "get": {}
     },
@@ -177,6 +180,9 @@
     },
     "/api/tokens": {
       "post": {},
+      "get": {}
+    },
+    "/api/tokens/scopes": {
       "get": {}
     },
     "/api/tokens/{uuid}": {
@@ -325,6 +331,9 @@
       "patch": {},
       "get": {}
     },
+    "/api/hosts/bulk/update": {
+      "patch": {}
+    },
     "/api/hosts/{uuid}": {
       "get": {},
       "delete": {}
@@ -339,12 +348,6 @@
       "post": {}
     },
     "/api/hosts/bulk/enable": {
-      "post": {}
-    },
-    "/api/hosts/bulk/set-inbound": {
-      "post": {}
-    },
-    "/api/hosts/bulk/set-port": {
       "post": {}
     },
     "/api/bandwidth-stats/nodes/{uuid}/users/legacy": {
@@ -380,6 +383,9 @@
     },
     "/api/bandwidth-stats/nodes": {
       "get": {}
+    },
+    "/api/bandwidth-stats/nodes/users": {
+      "post": {}
     },
     "/api/infra-billing/providers": {
       "get": {},
@@ -431,9 +437,6 @@
     },
     "/api/system/tools/x25519/generate": {
       "get": {}
-    },
-    "/api/system/tools/happ/encrypt": {
-      "post": {}
     },
     "/api/system/testers/srr-matcher": {
       "post": {}

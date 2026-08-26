@@ -27,7 +27,7 @@ Legacy singular scopes are accepted for compatibility where already implemented,
 
 ## Request Policy
 
-Every documented Remnawave `2.7.4` operation is present in the static catalog and has an explicit support level. `policy-enforced` routes reject unknown query parameters and duplicate query parameters. Body-policy routes require `application/json`, reject `Content-Encoding`, reject duplicate JSON object keys, require a top-level object, and reject unknown fields.
+Every documented Remnawave `2.8.1` operation is present in the static catalog and has an explicit support level. `policy-enforced` routes reject unknown query parameters and duplicate query parameters. Body-policy routes require `application/json`, reject `Content-Encoding`, reject duplicate JSON object keys, require a top-level object, and reject unknown fields.
 
 Configured token constraints are enforced on user bodies and response-side user reads:
 
@@ -70,4 +70,4 @@ Restricted write support covers:
 - selected user actions: disable, enable, reset traffic, revoke;
 - HWID create/delete/delete-all with user ownership preflight and `hwid:write`.
 
-Bulk user changes, squad writes, subscription page writes, node/host/infrastructure writes, token management, and admin management stay privileged.
+Bulk user changes, squad writes, subscription page writes, node/infrastructure writes, token management, and admin management stay privileged. The current host exception is `PATCH /api/hosts/bulk/update`, which requires the existing `hosts:write` scope, both write-safety flags, and every requested host UUID to be in the token allowlist (or explicit `allow_all_hosts`).

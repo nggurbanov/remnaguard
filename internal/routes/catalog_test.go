@@ -9,13 +9,13 @@ import (
 )
 
 func TestCatalogDeniesUnknownByNoMatch(t *testing.T) {
-	if _, ok := Match(Catalog("2.7.4"), http.MethodDelete, "/api/nodes"); ok {
+	if _, ok := Match(Catalog("2.8.1"), http.MethodDelete, "/api/nodes"); ok {
 		t.Fatal("unexpected route match")
 	}
 }
 
 func TestPublicSubscriptionRoute(t *testing.T) {
-	route, ok := Match(Catalog("2.7.4"), http.MethodGet, "/api/sub/abcdef/sing-box")
+	route, ok := Match(Catalog("2.8.1"), http.MethodGet, "/api/sub/abcdef/sing-box")
 	if !ok {
 		t.Fatal("route not found")
 	}
@@ -31,7 +31,7 @@ func TestSubscriptionPageConfigRoutesArePolicyEnforced(t *testing.T) {
 		"/api/subscription-page-configs/11111111-1111-4111-8111-111111111111",
 		"/api/subscriptions/subpage-config/abcdef",
 	} {
-		route, ok := Match(Catalog("2.7.4"), http.MethodGet, path)
+		route, ok := Match(Catalog("2.8.1"), http.MethodGet, path)
 		if !ok {
 			t.Fatalf("route not found: %s", path)
 		}
@@ -42,15 +42,15 @@ func TestSubscriptionPageConfigRoutesArePolicyEnforced(t *testing.T) {
 }
 
 func TestCatalogMetadataIsStrictClean(t *testing.T) {
-	res := validateCatalog(Catalog("2.7.4"))
+	res := validateCatalog(Catalog("2.8.1"))
 	if len(res.Invalid) > 0 || len(res.Duplicates) > 0 {
 		t.Fatalf("invalid catalog metadata: invalid=%v duplicates=%v", res.Invalid, res.Duplicates)
 	}
 }
 
 func TestOpenAPIStrictAgainstLocalFixture(t *testing.T) {
-	spec := "testdata/remnawave-2.7.4-openapi-min.json"
-	res, err := CheckOpenAPIStrict(spec, Catalog("2.7.4"))
+	spec := "testdata/remnawave-2.8.1-openapi-min.json"
+	res, err := CheckOpenAPIStrict(spec, Catalog("2.8.1"))
 	if err != nil {
 		t.Fatalf("strict OpenAPI check failed: %v; unknown=%d removed=%d invalid=%d ambiguous=%d duplicates=%d", err, len(res.Unknown), len(res.Removed), len(res.Invalid), len(res.Ambiguous), len(res.Duplicates))
 	}
@@ -60,17 +60,17 @@ func TestOpenAPIStrictAgainstLocalFixture(t *testing.T) {
 }
 
 func TestOpenAPIStrictAgainstPinnedOperationFixture(t *testing.T) {
-	spec := writeMinimalOpenAPISpec(t, remnawave274Operations)
-	res, err := CheckOpenAPIStrict(spec, Catalog("2.7.4"))
+	spec := writeMinimalOpenAPISpec(t, remnawave281Operations)
+	res, err := CheckOpenAPIStrict(spec, Catalog("2.8.1"))
 	if err != nil {
 		t.Fatalf("strict OpenAPI check failed: %v; unknown=%d removed=%d invalid=%d ambiguous=%d duplicates=%d", err, len(res.Unknown), len(res.Removed), len(res.Invalid), len(res.Ambiguous), len(res.Duplicates))
 	}
-	if len(res.Covered) != 185 || res.Coverage != 100 {
-		t.Fatalf("covered=%d coverage=%.2f, want 185 and 100", len(res.Covered), res.Coverage)
+	if len(res.Covered) != 186 || res.Coverage != 100 {
+		t.Fatalf("covered=%d coverage=%.2f, want 186 and 100", len(res.Covered), res.Coverage)
 	}
 }
 
-func TestActualRemnawave274Routes(t *testing.T) {
+func TestActualRemnawave281Routes(t *testing.T) {
 	for _, tc := range []struct {
 		method string
 		path   string
@@ -78,10 +78,19 @@ func TestActualRemnawave274Routes(t *testing.T) {
 		{http.MethodGet, "/api/system/stats/bandwidth"},
 		{http.MethodGet, "/api/hwid/devices/00000000-0000-0000-0000-000000000000"},
 		{http.MethodPatch, "/api/users"},
+		{http.MethodPatch, "/api/hosts/bulk/update"},
+		{http.MethodGet, "/api/tokens/scopes"},
+		{http.MethodGet, "/api/users/stream"},
+		{http.MethodPost, "/api/bandwidth-stats/nodes/users"},
 		{http.MethodPost, "/api/users/00000000-0000-0000-0000-000000000000/actions/reset-traffic"},
 	} {
-		if _, ok := Match(Catalog("2.7.4"), tc.method, tc.path); !ok {
+		if _, ok := Match(Catalog("2.8.1"), tc.method, tc.path); !ok {
 			t.Fatalf("route not found: %s %s", tc.method, tc.path)
+		}
+	}
+	for _, path := range []string{"/api/hosts/bulk/set-inbound", "/api/hosts/bulk/set-port", "/api/system/tools/happ/encrypt"} {
+		if _, ok := Match(Catalog("2.8.1"), http.MethodPost, path); ok {
+			t.Fatalf("removed route matched: POST %s", path)
 		}
 	}
 }

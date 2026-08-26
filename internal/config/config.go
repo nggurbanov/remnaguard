@@ -240,7 +240,7 @@ func Load(path string) (*Config, error) {
 func Defaults() *Config {
 	return &Config{
 		Server:        ServerConfig{APIListen: ":8080", LocalListen: "127.0.0.1:8081", ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, HeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20},
-		Compatibility: CompatibilityConfig{RemnawaveVersion: "2.7.4"},
+		Compatibility: CompatibilityConfig{RemnawaveVersion: "2.8.1"},
 		Limits:        LimitsConfig{MaxPathLength: 2048, MaxQueryLength: 4096, MaxBodyBytes: 1 << 20, GlobalConcurrency: 128, PerTokenConcurrency: 8, DefaultRate: "600/m", UpstreamBodyBytes: 64 << 20, ShutdownGracePeriod: 10 * time.Second},
 		Audit:         AuditConfig{Stdout: true, PepperEnv: "REMNAGUARD_AUDIT_PEPPER"},
 		Alerts:        AlertsConfig{Telegram: TelegramAlertsConfig{Cooldown: 5 * time.Minute, QueueSize: 100, Timeout: 5 * time.Second, APIBaseURL: "https://api.telegram.org"}},
@@ -325,7 +325,7 @@ func (c *Config) Validate() error {
 	if c.Compatibility.EffectiveVersion() == "" {
 		return errors.New("compatibility.remnawave_version or assume_version is required")
 	}
-	if c.Compatibility.EffectiveVersion() != "2.7.4" {
+	if c.Compatibility.EffectiveVersion() != "2.8.1" {
 		return fmt.Errorf("unsupported Remnawave version %q", c.Compatibility.EffectiveVersion())
 	}
 	if _, err := regexp.Compile(c.PublicSubs.ShortUUIDRegex); err != nil {

@@ -17,7 +17,7 @@ RemnaGuard releases should include:
 - Docker build
 - SBOM
 - container scan
-- local destructive contract test against Remnawave `2.7.4` staging before advertising restricted writes
+- local destructive contract test against Remnawave `2.8.1` staging before advertising restricted writes
 - checksums
 - signed release artifacts or documented signing status
 
@@ -33,11 +33,11 @@ Use this wording for the first public release:
 
 ```text
 RemnaGuard is a guarded drop-in replacement for documented privileged
-Remnawave API access on Remnawave 2.7.4, and a fine-grained policy gateway for
+Remnawave API access on Remnawave 2.8.1, and a fine-grained policy gateway for
 restricted API tokens.
 
 For privileged tokens with remnawave:*, RemnaGuard knows the full documented
-OpenAPI surface for Remnawave 2.7.4 and proxies known non-public routes while
+OpenAPI surface for Remnawave 2.8.1 and proxies known non-public routes while
 still enforcing route catalog matching, version guard, request structural
 safety, upstream auth isolation, header stripping, rate limits, and audit.
 

@@ -129,7 +129,7 @@ func routesCmd(args []string) error {
 	}
 	switch args[0] {
 	case "list":
-		for _, route := range routes.Catalog("2.7.4") {
+		for _, route := range routes.Catalog("2.8.1") {
 			fmt.Printf("%-7s %-48s %-20s %s\n", route.Method, route.Pattern, route.Support, strings.Join(route.Scopes, ","))
 		}
 		return nil
@@ -140,7 +140,7 @@ func routesCmd(args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		res, err := routes.CheckOpenAPI(*spec, routes.Catalog("2.7.4"))
+		res, err := routes.CheckOpenAPI(*spec, routes.Catalog("2.8.1"))
 		if err != nil {
 			return err
 		}

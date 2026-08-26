@@ -10,7 +10,7 @@ RemnaGuard ставится между клиентами и Remnawave API. Priv
 
 Репозиторий содержит v1 service baseline:
 
-- fail-closed полный static route catalog для Remnawave `2.7.4`;
+- fail-closed полный static route catalog для Remnawave `2.8.1`;
 - raw request-target validation до route matching;
 - HMAC-SHA256 credential verification через `REMNAGUARD_TOKEN_PEPPER`;
 - команды token add, rotate, disable и prune с atomic YAML writes, backups и validation rollback;
@@ -54,14 +54,14 @@ Generic policy recipes лежат в `examples/policies/`. Для приватн
 
 ## Совместимость
 
-RemnaGuard заявляет совместимость только для explicit static catalogs. Первый catalog - Remnawave `2.7.4`.
+RemnaGuard заявляет совместимость только для explicit static catalogs. Первый catalog - Remnawave `2.8.1`.
 
 По умолчанию readiness пытается определить upstream version. Если detection не удался или версия не поддерживается, proxied routes fail closed. Для изолированных окружений можно задать:
 
 ```yaml
 compatibility:
-  remnawave_version: "2.7.4"
-  assume_version: "2.7.4"
+  remnawave_version: "2.8.1"
+  assume_version: "2.8.1"
   allow_version_mismatch: false
 ```
 
@@ -123,7 +123,7 @@ RemnaGuard sits between clients and the Remnawave API. Privileged integrations k
 
 This repository contains the v1 service baseline:
 
-- fail-closed complete static route catalog for Remnawave `2.7.4`;
+- fail-closed complete static route catalog for Remnawave `2.8.1`;
 - raw request-target validation before route matching;
 - HMAC-SHA256 credential verification with `REMNAGUARD_TOKEN_PEPPER`;
 - token add, rotate, disable, and prune commands with atomic YAML writes, backups, and validation rollback;
@@ -166,14 +166,14 @@ Generic policy recipes live under `examples/policies/`. For private deployments,
 
 ## Compatibility
 
-RemnaGuard advertises compatibility only for explicit static catalogs. The initial catalog is Remnawave `2.7.4`.
+RemnaGuard advertises compatibility only for explicit static catalogs. The initial catalog is Remnawave `2.8.1`.
 
 By default startup readiness attempts upstream version detection. If detection fails or the version is unsupported, proxied routes fail closed. For isolated environments, set:
 
 ```yaml
 compatibility:
-  remnawave_version: "2.7.4"
-  assume_version: "2.7.4"
+  remnawave_version: "2.8.1"
+  assume_version: "2.8.1"
   allow_version_mismatch: false
 ```
 

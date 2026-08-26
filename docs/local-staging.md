@@ -4,7 +4,7 @@ The destructive contract suite must run against local staging only. It must not 
 
 Current local staging convention:
 
-- Remnawave backend `2.7.4`
+- Remnawave backend `2.8.1`
 - app: `http://127.0.0.1:3300`
 - metrics: `http://127.0.0.1:3301`
 - Postgres: `127.0.0.1:7767`

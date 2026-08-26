@@ -9,7 +9,7 @@ import (
 )
 
 func TestPrivilegedRequiresPrivilegedScope(t *testing.T) {
-	route, ok := routes.Match(routes.Catalog("2.7.4"), http.MethodGet, "/api/nodes")
+	route, ok := routes.Match(routes.Catalog("2.8.1"), http.MethodGet, "/api/nodes")
 	if !ok {
 		t.Fatal("route not found")
 	}
@@ -24,7 +24,7 @@ func TestPrivilegedRequiresPrivilegedScope(t *testing.T) {
 }
 
 func TestPolicyEnforcedAllowsMatchingScope(t *testing.T) {
-	route, ok := routes.Match(routes.Catalog("2.7.4"), http.MethodGet, "/api/users/00000000-0000-0000-0000-000000000000")
+	route, ok := routes.Match(routes.Catalog("2.8.1"), http.MethodGet, "/api/users/00000000-0000-0000-0000-000000000000")
 	if !ok {
 		t.Fatal("route not found")
 	}
